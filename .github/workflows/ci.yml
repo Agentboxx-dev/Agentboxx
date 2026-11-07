@@ -31,6 +31,22 @@ jobs:
       - name: Tests with coverage
         if: matrix.python-version == '3.12'
         run: pytest --cov=agentbox --cov-report=term-missing
+  cross-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Build Go verifier (standard library only)
+        working-directory: verifiers/go
+        run: go vet ./... && go build -o agentbox-verify main.go
+      - run: pip install -e . cryptography
+      - name: Cross-verify Python and Go
+        run: python scripts/crosscheck_go.py verifiers/go/agentbox-verify
   test-windows:
     runs-on: windows-latest
     strategy:
