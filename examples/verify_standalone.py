@@ -137,7 +137,7 @@ def verify_receipt_mode(log_path: Path, receipt_path: Path, pubkey_source: str) 
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         payload = receipt["payload"]
         sig_bytes = bytes.fromhex(receipt["signature"])
-        lines = log.read_text(encoding="utf-8").removesuffix("\n").split("\n") if log.stat().st_size else []
+        lines = log_path.read_bytes().decode("utf-8").rstrip("\r\n").split("\n") if log_path.stat().st_size else []
     except (OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 3
