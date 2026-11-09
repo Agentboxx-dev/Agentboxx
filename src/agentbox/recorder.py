@@ -173,6 +173,10 @@ class Recorder:
             if kind:
                 self.writer.append("sandbox.crash", {"step_index": self.step_index, "kind": kind,
                                                      "exit_code": obs.get("exit_code"), **sbx})
+        egress_events = obs.pop("egress_events", None)
+        if egress_events:
+            for ev in egress_events:
+                self.writer.append("network.egress", {"step_index": self.step_index, **ev})
         self.cumulative_duration_ms += obs.get("duration_ms", 0)
         signals = self.detector.observe(step)
         for s in signals:

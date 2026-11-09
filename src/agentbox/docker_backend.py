@@ -44,7 +44,7 @@ def docker_available() -> bool:
 
 class DockerSandbox:
     def __init__(self, workspace="./workspace-docker", image=DEFAULT_IMAGE,
-                 network="none", memory="512m", cpus="1", pids=128, resource_stats=True, user=None):
+                 network="none", memory="512m", cpus="1", pids=128, resource_stats=True, user=None, egress_policy=None):
         self.workspace = os.path.abspath(workspace)
         self.image, self.network = image, network
         self.memory, self.cpus, self.pids = memory, cpus, pids
@@ -54,19 +54,29 @@ class DockerSandbox:
         self.user = user or container_user()   # "uid:gid"; override if needed
         self.events = EventCounter()
         self._events_proc = None
+        self.egress_policy = egress_policy
+        self._egress_proxy = None
 
     def describe(self) -> dict:
-        return {"backend": "docker", "image": self.image, "network": self.network,
+        desc = {"backend": "docker", "image": self.image, "network": self.network,
                 "memory": self.memory, "cpus": self.cpus, "pids_limit": self.pids,
                 "read_only_rootfs": True, "cap_drop": "ALL", "resource_stats": self.resource_stats, "user": self.user}
+        if self.egress_policy:
+            desc["egress"] = self.egress_policy.to_dict()
+        return desc
 
     def start(self):
         if not docker_available():
             raise DockerNotAvailable("Docker is not running or not installed.")
         os.makedirs(self.workspace, exist_ok=True)
+        if self.egress_policy:
+            from .egress_proxy import EgressProxy
+            self._egress_proxy = EgressProxy(self.egress_policy)
+            self._egress_proxy.start()
+        network = "bridge" if (self.egress_policy and self.network == "none") else self.network
         cmd = [
             "docker", "run", "-d", "--rm", "--name", self.name,
-            "--network", self.network,
+            "--network", network,
             "--read-only",
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
             "--cap-drop", "ALL",
@@ -76,12 +86,27 @@ class DockerSandbox:
             "--cpus", str(self.cpus),
             "--user", self.user,
             "-e", "HOME=/tmp",
+        ]
+        if self._egress_proxy:
+            proxy_url = f"http://host.docker.internal:{self._egress_proxy.port}"
+            cmd.extend([
+                "--add-host=host.docker.internal:host-gateway",
+                "-e", f"HTTP_PROXY={proxy_url}",
+                "-e", f"HTTPS_PROXY={proxy_url}",
+                "-e", f"http_proxy={proxy_url}",
+                "-e", f"https_proxy={proxy_url}",
+                "-e", "NO_PROXY=localhost,127.0.0.1",
+            ])
+        cmd.extend([
             "-v", f"{self.workspace}:/workspace",
             "-w", "/workspace",
             self.image, "sleep", "infinity",
-        ]
+        ])
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
+            if self._egress_proxy:
+                self._egress_proxy.stop()
+                self._egress_proxy = None
             raise DockerNotAvailable(f"Could not start container: {r.stderr.strip()}")
         self.started = True
         self._start_event_watcher()
@@ -91,6 +116,9 @@ class DockerSandbox:
             self._stop_event_watcher()
             subprocess.run(["docker", "rm", "-f", self.name], capture_output=True)
             self.started = False
+        if self._egress_proxy:
+            self._egress_proxy.stop()
+            self._egress_proxy = None
 
     def _start_event_watcher(self):
         """Follow `docker events` for this container (host side, so the agent cannot touch it)."""
@@ -164,4 +192,6 @@ class DockerSandbox:
         obs = build_observation(cmd, code, out, err, timed_out or code == 124, exceeded,
                                 self.workspace, int((time.monotonic() - t0) * 1000))
         obs["sandbox"] = self._snapshot(oom_before, code, exceeded)
+        if self._egress_proxy:
+            obs["egress_events"] = self._egress_proxy.drain_events()
         return obs

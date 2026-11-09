@@ -230,6 +230,25 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "network.egress"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/network_egress"
+              }
+            }
+          }
         }
       ]
     },
@@ -548,6 +567,43 @@
               "type": "number"
             }
           }
+        }
+      }
+    },
+    "network_egress": {
+      "type": "object",
+      "required": [
+        "step_index",
+        "method",
+        "host",
+        "port",
+        "allowed"
+      ],
+      "properties": {
+        "step_index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "method": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer"
+        },
+        "allowed": {
+          "type": "boolean"
+        },
+        "blocked_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ts": {
+          "type": "number"
         }
       }
     }
