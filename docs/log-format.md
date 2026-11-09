@@ -47,6 +47,7 @@ The first record has `prev_hash = GENESIS`. Every later record has `prev_hash` e
 | `analysis.signal` | A detector fired | `step_index`, `kind`, `severity`, `count`, `hint` |
 | `sandbox.resource` | Docker backend, after each step | `step_index`, `mem_bytes`, `mem_limit_bytes`, `mem_pct`, `cpu_pct`, `pids` |
 | `sandbox.crash` | OOM kill or stopped container | `step_index`, `kind`, `exit_code`, `running`, `oom_killed`, `oom_events` |
+| `network.egress` | Outbound request through egress proxy | `step_index`, `method`, `host`, `port`, `allowed`, `blocked_reason`, `ts` |
 | `contract.verdict` | Before close, if contract configured | `passed`, `summary`, `assertions` (`name`, `kind`, `passed`, `details`), optional `budget_exceeded` |
 | `session.end` | Once, last, when closed | `reason`, `steps` |
 

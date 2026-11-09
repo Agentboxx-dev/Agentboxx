@@ -1,3 +1,4 @@
+from .egress_proxy import EgressPolicy
 from .contract import (
     Assertion,
     AssertionResult,
@@ -12,6 +13,7 @@ from .recorder import Recorder
 from .signer import ChainWriter, load_or_create_key, verify_file, verify_log
 
 __all__ = [
+    "EgressPolicy",
     "Recorder",
     "ChainWriter",
     "load_or_create_key",
