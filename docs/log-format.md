@@ -96,6 +96,8 @@ Auditors verify the receipt with only the public key:
 3. Retrace the hash chain of `<session>.ndjson`: ensure every record's `hash` equals `sha256(prev_hash + sha256(canon(event)))`.
 4. Ensure the total records and final hash match `payload.record_count` and `payload.final_hash`.
 
+Before verifying the Ed25519 signature, the verifier rejects low-order public keys to protect against weak-point and signature malleability-related edge cases.
+
 CLI verification:
 ~~~bash
 # Generate keypair

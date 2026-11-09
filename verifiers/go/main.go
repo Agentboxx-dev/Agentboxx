@@ -20,9 +20,50 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+	"math/big"
 )
 
 const genesis = "0000000000000000000000000000000000000000000000000000000000000000"
+
+
+
+var smallOrderY = func() []*big.Int {
+	hexes := []string{
+		"0000000000000000000000000000000000000000000000000000000000000000", // y = 0
+		"0100000000000000000000000000000000000000000000000000000000000000", // y = 1
+		"ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", // y = p-1
+		"c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a", // order 8
+		"26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05", // order 8
+	}
+	out := make([]*big.Int, len(hexes))
+	for i, h := range hexes {
+		b, _ := hex.DecodeString(h)
+		out[i] = leToInt(b)
+	}
+	return out
+}()
+
+var fieldP = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(19))
+
+func leToInt(b []byte) *big.Int {
+	rev := make([]byte, len(b))
+	for i := range b {
+		rev[len(b)-1-i] = b[i]
+	}
+	rev[0] &= 0x7f // clear the sign bit (top bit of the last LE byte)
+	return new(big.Int).SetBytes(rev)
+}
+
+func isSmallOrder(pub []byte) bool {
+	y := leToInt(pub)
+	y.Mod(y, fieldP)
+	for _, s := range smallOrderY {
+		if y.Cmp(s) == 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // ---------- canonical JSON (matches Python json.dumps(sort_keys, separators, ensure_ascii=False)) ----------
 
@@ -267,6 +308,10 @@ func verifyReceipt(path string, pub ed25519.PublicKey, st state) (problems []str
 	msg, err := canon(payload)
 	if err != nil {
 		return nil, err
+	}
+	if isSmallOrder(pub) {
+		problems = append(problems, "public key is a low-order point and is rejected")
+		return problems, nil
 	}
 	if !ed25519.Verify(pub, msg, sig) {
 		return []string{"receipt signature is invalid (forged or wrong key)"}, nil

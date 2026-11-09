@@ -116,6 +116,31 @@ def load_ed25519_public_key(source):
     raise TypeError(f"Unsupported public key type: {type(source)}")
 
 
+# --- Low-order point rejection ---
+
+_P = 2**255 - 19
+# y-coordinates (mod p) of the small-order points on edwards25519: 0, 1, p-1 and the
+# two order-8 points. The sign bit and non-canonical encodings (y >= p) are normalised
+# away before comparing, so every encoding of these points is covered.
+_SMALL_ORDER_Y = frozenset({
+    0,
+    1,
+    _P - 1,
+    int.from_bytes(bytes.fromhex(
+        "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"), "little") & (2**255 - 1),
+    int.from_bytes(bytes.fromhex(
+        "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"), "little") & (2**255 - 1),
+})
+
+
+def is_small_order_public_key(raw: bytes) -> bool:
+    """True if the 32-byte encoded point has small order (identity, order 2/4/8)."""
+    if len(raw) != 32:
+        return False
+    y = (int.from_bytes(raw, "little") & (2**255 - 1)) % _P
+    return y in _SMALL_ORDER_Y
+
+
 # --- ChainWriter ---
 
 class ChainWriter:
@@ -285,6 +310,15 @@ def verify_receipt(log_path, receipt_file, pubkey) -> tuple[list[str], dict | No
         public_key = load_ed25519_public_key(pubkey)
     except Exception as e:
         return [f"invalid public key: {e}"], None
+
+    pub_raw = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    # 0. Reject low-order public keys (signature forgery / malleability protection)
+    if is_small_order_public_key(pub_raw):
+        problems.append("public key is a low-order point and is rejected")
+        return problems, payload
 
     # 1. Verify Ed25519 signature
     try:
