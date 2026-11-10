@@ -81,7 +81,7 @@ agentbox keygen                          # generate Ed25519 keypair (~/.agentbox
 agentbox report runs/agent-demo.ndjson   # readable summary
 agentbox verify runs/agent-demo.ndjson   # symmetric integrity check
 agentbox verify runs/agent-demo.ndjson --pubkey ~/.agentbox/ed25519.pub  # public-key receipt check
-agentbox list                            # every log in ./runs: session, start time, steps, verifies?
+agentbox replay runs/agent-demo.ndjson   # step through a session in an interactive terminal player
 agentbox --version
 ~~~
 
@@ -204,6 +204,26 @@ The evaluation verdict (`contract.verdict`) is HMAC-signed and hash-chained into
 | *(error)* | 3 | The file is missing, empty, a directory or unreadable. This is not a verdict on the log, and `report` uses the same code |
 
 The manifest (`<session>.manifest.json`) is written when a session closes and records the final record count and hash, signed with the same key. The verifier requires the manifest: a closed session whose manifest is missing is reported as `INCOMPLETE`, and a truncated log whose manifest is still present is reported as `TAMPERED`. Anyone holding the symmetric signing key can verify HMAC signatures. For third-party and customer verification, Agentbox generates an asymmetric Ed25519 run receipt (`<session>.receipt.json`) on close. Auditors holding only the public key can verify that the run was executed and finalized by the keyholder without holding the private signing secret.
+
+## Replay a session in the terminal
+
+`agentbox replay <log>` is an interactive player: step through a run one frame at a time and see the thought, command, exit code, output, detector signals and sandbox resources for each step, with the verification result on screen. It is for debugging an agent that looped, hallucinated or crashed, and for auditors reading a run.
+
+~~~bash
+pip install "agentboxx[ui]"                # the player uses the optional rich package
+agentbox replay runs/agent-demo.ndjson
+~~~
+
+| Key | Action |
+|---|---|
+| `→`, `Space`, `n` | next step |
+| `←`, `p` | previous step |
+| `Home` / `End` | first / last step |
+| `a` | toggle autoplay |
+| `v` | verify the log again |
+| `q`, `Esc` | quit |
+
+The header shows a dot per step (failed steps in red) and a badge: `VERIFIED ✓`, `TAMPERED ✗` or `INCOMPLETE ⚠`. Tampered and unclosed logs can still be replayed; the problem is shown in a banner. The exit code mirrors `agentbox verify` (0, 1, 2; 3 for a missing or unreadable file), so `agentbox replay --plain` works in scripts. Without a terminal, or with `--plain`, it prints one frame as plain text and needs no extra package. See [docs/cli.md](docs/cli.md) for all options.
 
 ## Detection signals
 
