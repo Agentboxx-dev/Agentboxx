@@ -1,11 +1,11 @@
 <div align="center">
 
-<a href="https://github.com/Prathmesh010190/Agentboxx">
+<a href="https://github.com/Agentboxx-dev/Agentboxx">
   <img src="assets/box-logo.svg" alt="AGENTBOXX" width="600">
 </a>
 
 <p align="center">
-  <a href="https://github.com/Prathmesh010190/Agentboxx/actions/workflows/ci.yml"><img src="https://github.com/Prathmesh010190/Agentboxx/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+  <a href="https://github.com/Agentboxx-dev/Agentboxx/actions/workflows/ci.yml"><img src="https://github.com/Agentboxx-dev/Agentboxx/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
   <a href="https://pypi.org/project/agentboxx/"><img src="https://img.shields.io/pypi/v/agentboxx.svg?color=f97316" alt="PyPI version"></a>
   <a href="https://pypi.org/project/agentboxx/"><img src="https://img.shields.io/badge/python-3.10+-3776AB.svg" alt="Python Versions"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"></a>
@@ -57,7 +57,7 @@ pip install agentboxx
 Or install from source:
 
 ~~~bash
-git clone https://github.com/Prathmesh010190/Agentboxx.git
+git clone https://github.com/Agentboxx-dev/Agentboxx.git
 cd Agentboxx
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -275,10 +275,10 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 - [x] Stable error signatures for Python, Node.js and Go
 - [x] Truncation detection with a signed closing manifest
 - [x] Secret redaction before signing
-- [x] Output size cap and process-tree kill on timeout ([#22](https://github.com/Prathmesh010190/Agentboxx/issues/22))
+- [x] Output size cap and process-tree kill on timeout ([#22](https://github.com/Agentboxx-dev/Agentboxx/issues/22))
 - [x] Sandbox resource and crash events (Docker backend)
-- [x] Public-key signing so third parties can verify logs ([#23](https://github.com/Prathmesh010190/Agentboxx/issues/23))
-- [x] Validate against a live model ([#5](https://github.com/Prathmesh010190/Agentboxx/issues/5))
+- [x] Public-key signing so third parties can verify logs ([#23](https://github.com/Agentboxx-dev/Agentboxx/issues/23))
+- [x] Validate against a live model ([#5](https://github.com/Agentboxx-dev/Agentboxx/issues/5))
 - [ ] Network egress capture (design in [docs/network-egress.md](docs/network-egress.md))
 - [ ] Semantic drift detector
 - [ ] Session replay UI
@@ -346,7 +346,7 @@ agentbox verify ./runs/my-run.ndjson -k ./runs/key
 
 ## Contributing
 
-Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the issues labeled [`good first issue`](https://github.com/Prathmesh010190/Agentboxx/labels/good%20first%20issue).
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the issues labeled [`good first issue`](https://github.com/Agentboxx-dev/Agentboxx/labels/good%20first%20issue).
 
 ## License
 

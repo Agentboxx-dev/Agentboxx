@@ -31,10 +31,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Prathmesh010190/Agentboxx"
-Repository = "https://github.com/Prathmesh010190/Agentboxx"
-Issues = "https://github.com/Prathmesh010190/Agentboxx/issues"
-Documentation = "https://github.com/Prathmesh010190/Agentboxx/tree/main/docs"
+Homepage = "https://github.com/Agentboxx-dev/Agentboxx"
+Repository = "https://github.com/Agentboxx-dev/Agentboxx"
+Issues = "https://github.com/Agentboxx-dev/Agentboxx/issues"
+Documentation = "https://github.com/Agentboxx-dev/Agentboxx/tree/main/docs"
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "ruff", "jsonschema"]
