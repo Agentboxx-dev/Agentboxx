@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Prathmesh010190/Agentboxx/blob/main/docs/manifest.schema.json",
+  "$id": "https://github.com/Agentboxx-dev/Agentboxx/blob/main/docs/manifest.schema.json",
   "title": "agentbox closing manifest",
   "description": "<session>.manifest.json, written when a session closes. See docs/log-format.md.",
   "type": "object",

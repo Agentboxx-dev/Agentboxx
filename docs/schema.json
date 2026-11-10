@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/Prathmesh010190/Agentboxx/blob/main/docs/schema.json",
+  "$id": "https://github.com/Agentboxx-dev/Agentboxx/blob/main/docs/schema.json",
   "title": "agentbox log record",
   "description": "One line of an agentbox .ndjson log. See docs/log-format.md for the hash chain and signature rules, which JSON Schema cannot express.",
   "type": "object",

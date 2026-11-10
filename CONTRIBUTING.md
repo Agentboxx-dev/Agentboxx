@@ -11,7 +11,7 @@ Thanks for helping. agentbox is a security-flavored project: its value is that i
 ## Setup
 
 ~~~bash
-git clone https://github.com/Prathmesh010190/Agentboxx.git
+git clone https://github.com/Agentboxx-dev/Agentboxx.git
 cd Agentboxx
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -92,7 +92,7 @@ If you find a way for sandboxed code to read, edit or delete the signing key or 
 
 - Error-signature extractors for more languages (`src/agentbox/error_signatures.py`)
 - Tests and docs
-- Issues labeled [`good first issue`](https://github.com/Prathmesh010190/Agentboxx/labels/good%20first%20issue)
+- Issues labeled [`good first issue`](https://github.com/Agentboxx-dev/Agentboxx/labels/good%20first%20issue)
 
 ## License
 
