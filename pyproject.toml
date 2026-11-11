@@ -37,7 +37,8 @@ Issues = "https://github.com/Agentboxx-dev/Agentboxx/issues"
 Documentation = "https://github.com/Agentboxx-dev/Agentboxx/tree/main/docs"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "jsonschema"]
+dev = ["pytest", "pytest-cov", "ruff", "jsonschema", "rich>=13.0"]
+ui = ["rich>=13.0"]
 langchain = ["langchain-core>=0.1.0"]
 
 [project.scripts]

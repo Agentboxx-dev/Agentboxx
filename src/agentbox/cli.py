@@ -1,4 +1,4 @@
-"""Command-line interface: verify, report, list, demo and keygen."""
+"""Command-line interface: verify, report, replay, list, demo and keygen."""
 import argparse
 import json
 import os
@@ -184,6 +184,76 @@ def cmd_report(args) -> int:
         print(rendered, end="")
     return EXIT_OK
 
+def _replay_verdict(args):
+    """Build a callable that verifies the log the same way `agentbox verify` would."""
+    from .replay import INCOMPLETE, TAMPERED, VERIFIED, Verdict
+
+    receipt_file = getattr(args, "receipt", None)
+    pubkey = getattr(args, "pubkey", None)
+    key = None
+    if getattr(args, "key", None):
+        kp = Path(args.key)
+        if not kp.exists():
+            raise CliError(f"HMAC key file not found: {args.key}")
+        try:
+            key = bytes.fromhex(kp.read_text().strip())
+        except ValueError:
+            raise CliError(f"HMAC key file is not valid hex: {args.key}")
+
+    def check() -> "Verdict":
+        if receipt_file or pubkey:
+            rf = receipt_file or receipt_path(args.logfile)
+            pk = pubkey or (DEFAULT_ED25519_PUB_PATH if DEFAULT_ED25519_PUB_PATH.exists() else None)
+            if pk is None:
+                raise CliError("receipt verification requires --pubkey <path_or_hex>")
+            problems, _ = verify_receipt(args.logfile, rf, pk)
+            return Verdict(TAMPERED if problems else VERIFIED, list(problems))
+        problems, incomplete = _run_verify(args.logfile, key)
+        if problems:
+            return Verdict(TAMPERED, list(problems))
+        if incomplete:
+            return Verdict(INCOMPLETE, list(incomplete))
+        return Verdict(VERIFIED)
+
+    return check
+
+
+def cmd_replay(args) -> int:
+    """Step through a session. Exit code mirrors `verify`: 0 intact, 1 tampered, 2 incomplete."""
+    from . import replay as rp
+
+    _check_readable(args.logfile)
+    if args.delay <= 0:
+        raise CliError("--delay must be greater than 0")
+    check = _replay_verdict(args)
+    verdict = check()
+    try:
+        events, parse_errors = rp.load_events_tolerant(args.logfile)
+    except OSError as e:
+        raise CliError(f"cannot read {args.logfile}: {e.strerror or e}")
+    session = rp.build_session(events, parse_errors)
+    state = rp.ReplayState(len(session.frames), loop=args.loop)
+
+    if args.frame is not None:
+        if not 1 <= args.frame <= max(len(session.frames), 1):
+            raise CliError(f"--frame must be between 1 and {max(len(session.frames), 1)}")
+        state.index = args.frame - 1
+
+    interactive = (not args.plain and sys.stdin.isatty() and sys.stdout.isatty()
+                   and os.environ.get("TERM") != "dumb")
+    if not interactive:
+        print(rp.render_plain(session, state.index, verdict, width=shutil.get_terminal_size((80, 24)).columns))
+        return verdict.exit_code
+
+    try:
+        from . import replay_ui
+    except ImportError:
+        raise CliError("the interactive replay needs the optional 'rich' package: "
+                       "pip install 'agentboxx[ui]'  (or use --plain)")
+    with rp.KeyReader() as keys:                 # restores the terminal even if the loop raises
+        verdict = replay_ui.run_tui(session, state, verdict, keys, check,
+                                    autoplay=args.autoplay, delay=args.delay)
+    return verdict.exit_code
 
 def _peek(path):
     """Cheap, tolerant read for `list`: (session_id, start timestamp, step count)."""
@@ -301,6 +371,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     r.set_defaults(fn=cmd_report)
 
+    rp_ = sub.add_parser("replay", help="step through a session in an interactive terminal player")
+    rp_.add_argument("logfile")
+    rp_.add_argument("--plain", action="store_true",
+                     help="print one frame as plain text and exit (no rich needed; also used when not a terminal)")
+    rp_.add_argument("--frame", type=int, default=None, metavar="N",
+                     help="start at (or, with --plain, print) step N, counting from 1")
+    rp_.add_argument("--loop", action="store_true", help="wrap around instead of stopping at the last step")
+    rp_.add_argument("--autoplay", action="store_true", help="start with autoplay on (press a to toggle)")
+    rp_.add_argument("--delay", type=float, default=1.0, metavar="SECONDS",
+                     help="autoplay delay between steps (default: 1.0)")
+    rp_.add_argument("--receipt", "-r", default=None, help="path to .receipt.json")
+    rp_.add_argument("--pubkey", "-p", default=None, help="Ed25519 public key file or hex string")
+    rp_.add_argument("--key", "-k", default=None, help="HMAC symmetric key file")
+    rp_.set_defaults(fn=cmd_replay)
+    
     ls = sub.add_parser("list", help="list the logs in a directory (default: ./runs)")
     ls.add_argument("directory", nargs="?", default="runs")
     ls.set_defaults(fn=cmd_list)
