@@ -19,7 +19,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from agentbox.signer import ChainWriter, canon  # noqa: E402
 
 PY_VERIFIER = ROOT / "examples" / "verify_standalone.py"
-GO = sys.argv[1]
+GO_PATH = Path(sys.argv[1])
+GO = str((ROOT / GO_PATH).resolve() if not GO_PATH.is_absolute() else GO_PATH.resolve())
 failures = []
 
 

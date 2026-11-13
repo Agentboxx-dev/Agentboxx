@@ -69,3 +69,40 @@ def redact_all(cmd: str, out: str, err: str):
     out, c2 = redact(out)
     err, c3 = redact(err)
     return cmd, out, err, merge_counts(c1, c2, c3)
+
+_SECRET_KEY = re.compile(r"(?i)password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|"
+                         r"authorization|credential")
+_MAX_DEPTH = 32
+
+
+def redact_value(obj, _under_secret_key: bool = False, _depth: int = 0):
+    """Recursively redact secrets in JSON-like data, including 
+    sensitive values under secret-named keys, while preserving 
+    numbers and booleans and enforcing a 32-level nesting limit."""
+    
+    counts: dict[str, int] = {}
+    if _depth > _MAX_DEPTH:
+        return "[REDACTED:too_deep]", {"too_deep": 1}
+    if isinstance(obj, str):
+        if _under_secret_key and obj and not obj.startswith("[REDACTED:"):
+            return "[REDACTED:secret_key]", {"secret_key": 1}
+        return redact(obj)
+    if isinstance(obj, dict):
+        clean: dict = {}
+        for k, v in obj.items():
+            key, kc = redact(str(k))
+            val, vc = redact_value(v, bool(_SECRET_KEY.search(str(k))), _depth + 1)
+            counts = merge_counts(counts, kc, vc)
+            base, n = key, 2
+            while key in clean:                      # two keys that redact to the same text
+                key, n = f"{base}#{n}", n + 1
+            clean[key] = val
+        return clean, counts
+    if isinstance(obj, list):
+        out = []
+        for item in obj:
+            val, c = redact_value(item, _under_secret_key, _depth + 1)
+            out.append(val)
+            counts = merge_counts(counts, c)
+        return out, counts
+    return obj, counts

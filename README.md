@@ -137,6 +137,23 @@ rec.close("done")                        # also stops the container
 
 `agentbox.agent.run_agent` wraps this in a ReAct-style loop. `ScriptedModel` needs no API key. `GeminiModel` connects to Google Gemini via standard-library REST (needs `GEMINI_API_KEY`, validated end-to-end). `AnthropicModel` is an optional adapter (`pip install anthropic`, set `ANTHROPIC_API_KEY`).
 
+### Record tool calls (MCP and other agent frameworks)
+
+Agents built on the Model Context Protocol, the OpenAI Agents SDK or LangChain act through tool calls, not shell commands. Record each one with `record_tool_call`:
+
+~~~python
+rec.record_tool_call(
+    tool_name="search_issues",
+    tool_source="mcp:github",            # free text: mcp:<server>, builtin, langchain, function...
+    arguments={"query": "is:open label:bug"},
+    result={"total": 3},
+    duration_ms=412,
+    is_error=False,
+)
+~~~
+
+A tool call is a step: it shares `step_index` with commands, counts toward a contract's `max_steps`, and feeds the loop detectors. Secrets in `arguments` and `result` are removed before anything is signed (including values under keys such as `password` or `api_key`). Anything larger than 64 KB is cut to its head and tail, with its size and a SHA-256 of the whole redacted value kept. Tool calls appear in `agentbox report` (text, JSON and HTML), in `agentbox replay`, and `agentbox verify` prints how many a verified log holds. Details: [docs/log-format.md](docs/log-format.md#tool-calls).
+
 ### LangChain & LangGraph integration
 
 Agentboxx records LangChain tool executions into its cryptographic flight recorder:
