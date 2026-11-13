@@ -12,6 +12,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from .toolcall import as_text
 
 VERIFIED = "VERIFIED"
 TAMPERED = "TAMPERED"
@@ -54,11 +55,23 @@ class Frame:
     signals: List[Dict[str, Any]] = field(default_factory=list)
     resource: Optional[Dict[str, Any]] = None
     crash: Optional[Dict[str, Any]] = None
+    kind: str = "step"              # "step" (a command) or "tool" (a tool.call)
+
+    @property
+    def label(self) -> str:
+        return "TOOL CALL" if self.kind == "tool" else "COMMAND"
+
+    @property
+    def prompt(self) -> str:
+        return "" if self.kind == "tool" else "$ "
 
     @property
     def failed(self) -> bool:
-        return bool(self.timed_out or self.crash or (self.exit_code not in (0, None)))
-
+        return (
+            self.timed_out
+            or (self.exit_code is not None and self.exit_code != 0)
+            or self.crash is not None
+        )
 
 @dataclass
 class Session:
@@ -146,6 +159,32 @@ def build_session(events: List[Dict[str, Any]], parse_errors: Optional[List[str]
                 output_truncated=out_trunc or err_trunc or bool(data.get("output_limit_exceeded")),
                 total_bytes=out_total + err_total,
                 error_class=data.get("error_class"),
+            )
+            sess.frames.append(frame)
+            by_step[frame.step_index] = frame
+        elif etype == "tool.call":
+            # A tool call is one step (it shares step_index), so it gets a frame like a command does.
+            text = as_text(data.get("result"))
+            is_err = bool(data.get("is_error"))
+            ts = ev.get("ts")
+            dur = data.get("duration_ms")
+            args = " ".join(as_text(data.get("arguments")).split())
+            label = f"{data.get('tool_source', '?')}/{data.get('tool_name', '?')}"
+            frame = Frame(
+                index=len(sess.frames),
+                step_index=data.get("step_index", len(sess.frames) + 1),
+                ts=ts if isinstance(ts, (int, float)) else None,
+                thought=str(data.get("thought") or ""),
+                command=f"{label} {args}".strip(),
+                exit_code=1 if is_err else 0,
+                timed_out=False,
+                duration_ms=dur if isinstance(dur, (int, float)) else None,
+                stdout="" if is_err else text,
+                stderr=text if is_err else "",
+                output_truncated=bool(data.get("result_truncated")),
+                total_bytes=len(text.encode("utf-8", "replace")),
+                error_class=None,
+                kind="tool",
             )
             sess.frames.append(frame)
             by_step[frame.step_index] = frame
@@ -383,8 +422,8 @@ def render_plain(session: Session, index: int, verdict: Verdict, width: int = 80
         out.append(row(ln))
     out.append(bar)
     code = "timed out" if f.timed_out else ("?" if f.exit_code is None else f.exit_code)
-    out.append(row(f"[COMMAND] (exit code: {code} | duration: {fmt_duration(f.duration_ms)})"))
-    for ln in _wrap("$ " + (f.command or ""), inner):
+    out.append(row(f"[{f.label}] (exit code: {code} | duration: {fmt_duration(f.duration_ms)})"))
+    for ln in _wrap(f.prompt + (f.command or ""), inner):
         out.append(row(ln))
     out.append(bar)
     out.append(row("[OUTPUT]"))
