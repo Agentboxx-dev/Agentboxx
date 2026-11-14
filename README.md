@@ -282,7 +282,7 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 
 - Windows is supported and tested in CI (Python 3.11–3.13 on `windows-latest`). Process-tree termination uses `taskkill /F /T` to kill runaway commands and all their children. The Docker backend runs as user `1000:1000` in the container (override with `DockerSandbox(user=...)`); Docker Desktop with Linux containers is required. The local backend automatically discovers Git Bash (in Program Files, LocalAppData, or on PATH), using `python` instead of Unix `python3`.
 - Detector thresholds are initial values, not calibrated on real agent traces.
-- No network capture yet (the sandbox simply has no network).
+- Network egress: outbound connections are filtered by domain and recorded as signed audit events; full HTTP/HTTPS request and response payload capture is not recorded.
 - No semantic drift detection yet; detection is command and state based.
 - Error signatures cover Python, Node.js and Go only. Other languages use a generic fallback.
 
