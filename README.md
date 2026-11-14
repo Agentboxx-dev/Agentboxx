@@ -253,6 +253,9 @@ Repeated-error detection compares normalized error signatures, so the same failu
 | Python | Tracebacks | Exception name, e.g. `ZeroDivisionError` |
 | Node.js | Uncaught errors with stack frames | e.g. `TypeError`, `Error[ERR_MODULE_NOT_FOUND]` |
 | Go | Panics, fatal errors, compile errors | `GoPanic`, `GoFatalError`, `GoCompileError` |
+| Rust | Panics, compile errors | `RustPanic`, `RustCompileError[E0308]` |
+| Java | Exceptions, caused-by chains, compile errors | Exception class (e.g. `java.lang.NullPointerException`), `JavaCompileError[cannot find symbol]` |
+| Ruby | Runtime errors, quote styles | Exception name, e.g. `ZeroDivisionError` |
 
 Anything else falls back to hashing the last lines of stderr. To add a language, see `src/agentbox/error_signatures.py`.
 
@@ -284,7 +287,7 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 - Detector thresholds are initial values, not calibrated on real agent traces.
 - No network capture yet (the sandbox simply has no network).
 - No semantic drift detection yet; detection is command and state based.
-- Error signatures cover Python, Node.js and Go only. Other languages use a generic fallback.
+- Error signatures cover Python, Node.js, Go, Rust, Java and Ruby. Other languages use a generic fallback.
 
 ## Roadmap
 
@@ -292,7 +295,7 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 - [x] Docker sandbox backend
 - [x] Loop detection with hint feedback
 - [x] ReAct-style agent loop
-- [x] Stable error signatures for Python, Node.js and Go
+- [x] Stable error signatures for Python, Node.js, Go, Rust, Java and Ruby
 - [x] Truncation detection with a signed closing manifest
 - [x] Secret redaction before signing
 - [x] Output size cap and process-tree kill on timeout ([#22](https://github.com/Agentboxx-dev/Agentboxx/issues/22))
