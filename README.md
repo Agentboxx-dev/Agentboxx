@@ -299,9 +299,10 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 - [x] Sandbox resource and crash events (Docker backend)
 - [x] Public-key signing so third parties can verify logs ([#23](https://github.com/Agentboxx-dev/Agentboxx/issues/23))
 - [x] Validate against a live model ([#5](https://github.com/Agentboxx-dev/Agentboxx/issues/5))
-- [ ] Network egress capture (design in [docs/network-egress.md](docs/network-egress.md))
+- [x] Network egress filtering proxy & connection audit events ([#24](https://github.com/Agentboxx-dev/Agentboxx/issues/24))
+- [x] Session replay UI ([#29](https://github.com/Agentboxx-dev/Agentboxx/issues/29))
+- [ ] First-class MCP tool-call recording ([#50](https://github.com/Agentboxx-dev/Agentboxx/issues/50))
 - [ ] Semantic drift detector
-- [ ] Session replay UI
 - [ ] Threshold calibration on recorded sessions
 
 ## Live Model Execution & Task Contracts
