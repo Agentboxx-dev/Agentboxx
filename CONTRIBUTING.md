@@ -77,7 +77,8 @@ A PR description is a claim. Reviewers rely on it, so check every line against w
 - [ ] Every new stop or failure path is written to the signed log
 - [ ] README or docs updated if behavior changed
 - [ ] Description matches the diff, and the test numbers come from my run
-
+- [ ] I agree to the contributor terms in the License section.
+      
 ### Review
 
 - PRs from forks need a maintainer to approve CI before it runs. Expect a short delay.
