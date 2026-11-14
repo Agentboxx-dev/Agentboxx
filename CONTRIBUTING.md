@@ -94,6 +94,19 @@ If you find a way for sandboxed code to read, edit or delete the signing key or 
 - Tests and docs
 - Issues labeled [`good first issue`](https://github.com/Agentboxx-dev/Agentboxx/labels/good%20first%20issue)
 
-## License
+## License and contributor agreement
 
-By contributing you agree that your contributions are licensed under Apache-2.0.
+Agentboxx is released under Apache-2.0. See [LICENSE](LICENSE).
+
+By submitting a contribution (code, tests, docs or anything else), you agree to the following terms:
+
+1. **It's yours to give.** The contribution is your own work, or you have the right to submit it. If your employer or school has rights in your work, you have their permission.
+2. **You keep your copyright.** You are not transferring ownership to anyone.
+3. **You grant the project a license.** You give the Agentboxx maintainers a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, copy, modify, distribute and sublicense your contribution, **including under other license terms, such as a commercial license for paid versions of Agentboxx.**
+4. **Patents.** You grant the same kind of license to any patent claims you own that your contribution necessarily infringes.
+5. **The open-source version stays open.** What you contribute remains available under Apache-2.0 in the public repository.
+6. **No warranty.** Your contribution is provided "as is".
+
+**How to agree:** add this sentence to your first pull request description:
+
+> I have read and agree to the contributor terms in CONTRIBUTING.md.
