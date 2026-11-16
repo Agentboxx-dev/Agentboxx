@@ -89,6 +89,8 @@ class Recorder:
             start["agent_id"] = agent_id
 
         if self.contract:
+            if self.contract.test_files and not self.contract.test_hashes:
+                self.contract.record_test_hashes(self.workspace)
             start["contract"] = self.contract.to_dict()
 
         self.writer.append("session.start", start)
@@ -424,6 +426,7 @@ class Recorder:
                 steps=self.step_index,
                 cumulative_duration_s=cumulative_duration_s,
                 elapsed_wall_clock_s=elapsed_wall_s,
+                sandbox=self.sandbox,
             )
 
             self.writer.append(

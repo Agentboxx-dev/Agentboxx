@@ -195,3 +195,98 @@ class DockerSandbox:
         if self._egress_proxy:
             obs["egress_events"] = self._egress_proxy.drain_events()
         return obs
+
+    def run_eval(self, cmd: str, timeout_s: float = 30.0) -> dict:
+        """Run an assertion command in a fresh, isolated ephemeral container."""
+        return run_eval_container(
+            cmd=cmd,
+            workspace=self.workspace,
+            image=self.image,
+            timeout_s=timeout_s,
+            memory=self.memory,
+            cpus=self.cpus,
+            pids=self.pids,
+            user=self.user,
+        )
+
+
+def run_eval_container(
+    cmd: str,
+    workspace: str | os.PathLike,
+    image: str = DEFAULT_IMAGE,
+    timeout_s: float = 30.0,
+    memory: str = "512m",
+    cpus: str = "1",
+    pids: int = 128,
+    user: str | None = None,
+) -> dict:
+    """Execute a contract assertion command in a fresh, isolated ephemeral container.
+
+    Security guarantees:
+      - Ephemeral container with --rm; never reuses the agent's live container.
+      - Workspace mounted strictly read-only (:ro).
+      - Network completely disabled (--network none).
+      - Linux capabilities dropped (--cap-drop ALL) and no-new-privileges:true.
+      - Read-only rootfs with isolated tmpfs /tmp (size=64m, noexec, nosuid).
+      - Strict memory, swap, cpu, and pids limits.
+    """
+    if not docker_available():
+        raise DockerNotAvailable("Docker is not running or not installed.")
+
+    ws = os.path.abspath(str(workspace))
+    container_name = f"agentbox-eval-{uuid.uuid4().hex[:8]}"
+    u = user or container_user()
+
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--name", container_name,
+        "--network", "none",
+        "--read-only",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges:true",
+        "--pids-limit", str(pids),
+        "--memory", memory, "--memory-swap", memory,
+        "--cpus", str(cpus),
+        "--user", u,
+        "-e", "HOME=/tmp",
+        "-e", "PYTEST_ADDOPTS=-o cache_dir=/tmp/.pytest_cache",
+        "-v", f"{ws}:/workspace:ro",
+        "-w", "/workspace",
+        image,
+        "bash", "--noprofile", "--norc", "-c", cmd,
+    ]
+
+    t0 = time.monotonic()
+    try:
+        proc = subprocess.run(
+            docker_cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s + 10,
+        )
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "exit_code": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "timed_out": False,
+            "duration_ms": duration_ms,
+        }
+    except subprocess.TimeoutExpired:
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
+        return {
+            "exit_code": 124,
+            "stdout": "",
+            "stderr": f"Command timed out after {timeout_s}s",
+            "timed_out": True,
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+        }
+    except Exception as e:
+        return {
+            "exit_code": 1,
+            "stdout": "",
+            "stderr": str(e),
+            "timed_out": False,
+            "duration_ms": int((time.monotonic() - t0) * 1000),
+        }

@@ -16,6 +16,7 @@ import os
 import re
 import stat
 import subprocess
+import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -154,6 +155,7 @@ class Assertion:
     expected_exit_code: int = 0  # for command
     name: Optional[str] = None
     timeout_s: float = 30.0  # timeout for command assertions
+    allow_unsafe_host_exec: bool = False  # required for command assertions on local backend
 
     def get_name(self) -> str:
         if self.name:
@@ -168,7 +170,7 @@ class Assertion:
             return f"command: {self.target}"
         return f"{self.kind}: {self.target}"
 
-    def check(self, workspace: str | Path) -> AssertionResult:
+    def check(self, workspace: str | Path, sandbox: Any = None, allow_unsafe_host_exec: bool = False) -> AssertionResult:
         ws = Path(workspace)
         name = self.get_name()
 
@@ -226,8 +228,63 @@ class Assertion:
             return AssertionResult(name=name, kind=self.kind, passed=False,
                                   details=f"Hash mismatch: expected {self.expected_hash}, got {h}")
 
-        # ── command (unchanged — Issue #54 scope) ────────────────
+        # ── command ──────────────────────────────────────────────
         if self.kind == "command":
+            effective_allow_unsafe = self.allow_unsafe_host_exec or allow_unsafe_host_exec
+
+            # 1. Ephemeral Docker evaluation sandbox
+            if sandbox is not None:
+                try:
+                    if hasattr(sandbox, "run_eval"):
+                        res = sandbox.run_eval(self.target, timeout_s=self.timeout_s)
+                    else:
+                        from .docker_backend import run_eval_container
+                        res = run_eval_container(
+                            cmd=self.target,
+                            workspace=ws,
+                            image=getattr(sandbox, "image", "python:3.12-slim"),
+                            timeout_s=self.timeout_s,
+                            user=getattr(sandbox, "user", None),
+                        )
+
+                    code = res.get("exit_code", 1)
+                    if res.get("timed_out"):
+                        return AssertionResult(
+                            name=name, kind=self.kind, passed=False,
+                            details=f"Command timed out after {self.timeout_s}s in evaluation sandbox",
+                        )
+                    if code == self.expected_exit_code:
+                        return AssertionResult(
+                            name=name, kind=self.kind, passed=True,
+                            details=f"Command exited with code {code} in evaluation sandbox",
+                        )
+                    out = (res.get("stderr") or res.get("stdout") or "").strip()[:200]
+                    return AssertionResult(
+                        name=name, kind=self.kind, passed=False,
+                        details=f"Exit code {code} != {self.expected_exit_code}: {out}",
+                    )
+                except Exception as e:
+                    return AssertionResult(
+                        name=name, kind=self.kind, passed=False,
+                        details=f"Evaluation sandbox error: {e}",
+                    )
+
+            # 2. Local backend safeguard: refuse unless explicit flag is set
+            if not effective_allow_unsafe:
+                return AssertionResult(
+                    name=name,
+                    kind=self.kind,
+                    passed=False,
+                    details="SECURITY: assert_command refused on local backend without allow_unsafe_host_exec=True",
+                )
+
+            # High-severity warning when executed unsandboxed on host
+            warnings.warn(
+                f"SECURITY WARNING: assert_command '{self.target}' executing on host without sandbox isolation",
+                UserWarning,
+                stacklevel=2,
+            )
+
             try:
                 proc = subprocess.run(
                     [_find_bash(), "--noprofile", "--norc", "-c", self.target],
@@ -239,22 +296,22 @@ class Assertion:
                 if proc.returncode == self.expected_exit_code:
                     return AssertionResult(
                         name=name, kind=self.kind, passed=True,
-                        details=f"Command exited with code {proc.returncode}"
+                        details=f"Command exited with code {proc.returncode}",
                     )
                 out = (proc.stderr or proc.stdout).strip()[:200]
                 return AssertionResult(
                     name=name, kind=self.kind, passed=False,
-                    details=f"Exit code {proc.returncode} != {self.expected_exit_code}: {out}"
+                    details=f"Exit code {proc.returncode} != {self.expected_exit_code}: {out}",
                 )
             except subprocess.TimeoutExpired:
                 return AssertionResult(
                     name=name, kind=self.kind, passed=False,
-                    details=f"Command timed out after {self.timeout_s}s"
+                    details=f"Command timed out after {self.timeout_s}s",
                 )
             except Exception as e:
                 return AssertionResult(
                     name=name, kind=self.kind, passed=False,
-                    details=f"Execution error: {e}"
+                    details=f"Execution error: {e}",
                 )
 
         return AssertionResult(name=name, kind=self.kind, passed=False,
@@ -273,6 +330,8 @@ class Assertion:
             d["expected_exit_code"] = self.expected_exit_code
         if self.name:
             d["name"] = self.name
+        if self.allow_unsafe_host_exec:
+            d["allow_unsafe_host_exec"] = self.allow_unsafe_host_exec
         return d
 
 
@@ -291,9 +350,26 @@ def assert_file_hash(path: str, expected_sha256: str, name: Optional[str] = None
     return Assertion(kind="file_hash", target=path, expected_hash=expected_sha256, name=name)
 
 
-def assert_command(cmd: str, expected_exit_code: int = 0, timeout_s: float = 30.0, name: Optional[str] = None) -> Assertion:
-    """Create an assertion that a host shell command runs to completion with the expected exit code."""
-    return Assertion(kind="command", target=cmd, expected_exit_code=expected_exit_code, timeout_s=timeout_s, name=name)
+def assert_command(
+    cmd: str,
+    expected_exit_code: int = 0,
+    timeout_s: float = 30.0,
+    name: Optional[str] = None,
+    allow_unsafe_host_exec: bool = False,
+) -> Assertion:
+    """Create an assertion that a shell command runs to completion with the expected exit code.
+
+    Security: Runs in a fresh ephemeral Docker sandbox when available. On the local
+    backend, execution is refused unless allow_unsafe_host_exec=True.
+    """
+    return Assertion(
+        kind="command",
+        target=cmd,
+        expected_exit_code=expected_exit_code,
+        timeout_s=timeout_s,
+        name=name,
+        allow_unsafe_host_exec=allow_unsafe_host_exec,
+    )
 
 
 @dataclass
@@ -302,14 +378,21 @@ class ContractVerdict:
     summary: str
     assertions: List[AssertionResult] = field(default_factory=list)
     budget_exceeded: Optional[Dict[str, Any]] = None
+    test_hashes: Optional[Dict[str, str]] = None
+    test_tampering: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "passed": self.passed,
             "summary": self.summary,
             "assertions": [a.to_dict() for a in self.assertions],
             "budget_exceeded": self.budget_exceeded,
         }
+        if self.test_hashes is not None:
+            d["test_hashes"] = self.test_hashes
+        if self.test_tampering is not None:
+            d["test_tampering"] = self.test_tampering
+        return d
 
 
 @dataclass
@@ -320,6 +403,24 @@ class TaskContract:
     max_duration_s: Optional[float] = None
     deadline_s: Optional[float] = None
     assertions: List[Assertion] = field(default_factory=list)
+    test_files: List[str] = field(default_factory=list)
+    test_hashes: Dict[str, str] = field(default_factory=dict)
+
+    def record_test_hashes(self, workspace: str | Path) -> Dict[str, str]:
+        """Record SHA-256 hashes of test_files in workspace before agent execution."""
+        ws = Path(workspace).resolve()
+        hashes: Dict[str, str] = {}
+        for target in self.test_files:
+            p = ws / target
+            if p.is_file():
+                hashes[target] = hashlib.sha256(p.read_bytes()).hexdigest()
+            elif p.is_dir():
+                for f in sorted(p.rglob("*")):
+                    if f.is_file():
+                        rel = str(f.relative_to(ws)).replace("\\", "/")
+                        hashes[rel] = hashlib.sha256(f.read_bytes()).hexdigest()
+        self.test_hashes = hashes
+        return hashes
 
     def check_step_budget(self, current_step: int) -> Optional[Dict[str, Any]]:
         if self.max_steps is not None and current_step > self.max_steps:
@@ -354,6 +455,8 @@ class TaskContract:
         steps: int = 0,
         cumulative_duration_s: float = 0.0,
         elapsed_wall_clock_s: float = 0.0,
+        sandbox: Any = None,
+        allow_unsafe_host_exec: bool = False,
     ) -> ContractVerdict:
         budget_viol = (
             self.check_step_budget(steps)
@@ -361,11 +464,51 @@ class TaskContract:
             or self.check_deadline_budget(elapsed_wall_clock_s)
         )
 
-        results = [a.check(workspace) for a in self.assertions]
-        assertions_passed = all(r.passed for r in results)
-        passed = assertions_passed and (budget_viol is None)
+        # Verify test integrity against recorded hashes
+        ws = Path(workspace).resolve()
+        tampered_files: List[str] = []
+        recorded_hashes: Dict[str, str] = {}
 
-        if budget_viol:
+        if self.test_hashes:
+            for rel_path, expected_h in self.test_hashes.items():
+                target_p = ws / rel_path
+                if not target_p.exists():
+                    tampered_files.append(f"{rel_path} (deleted)")
+                    recorded_hashes[rel_path] = "DELETED"
+                elif not target_p.is_file():
+                    tampered_files.append(f"{rel_path} (not regular file)")
+                    recorded_hashes[rel_path] = "INVALID"
+                else:
+                    curr_h = hashlib.sha256(target_p.read_bytes()).hexdigest()
+                    recorded_hashes[rel_path] = curr_h
+                    if curr_h.lower() != expected_h.lower():
+                        tampered_files.append(f"{rel_path} (hash mismatch)")
+
+        results = [
+            a.check(
+                workspace,
+                sandbox=sandbox,
+                allow_unsafe_host_exec=allow_unsafe_host_exec,
+            )
+            for a in self.assertions
+        ]
+
+        if tampered_files:
+            results.append(
+                AssertionResult(
+                    name="test_integrity",
+                    kind="test_integrity",
+                    passed=False,
+                    details=f"SECURITY: Test suite files tampered: {', '.join(tampered_files)}",
+                )
+            )
+
+        assertions_passed = all(r.passed for r in results)
+        passed = assertions_passed and (budget_viol is None) and (not tampered_files)
+
+        if tampered_files:
+            summary = f"Security violation: test suite files tampered ({len(tampered_files)} file(s))"
+        elif budget_viol:
             summary = f"Budget exceeded: {budget_viol['limit']} ({budget_viol['actual']} > {budget_viol['budget']})"
         elif not results:
             summary = "Contract satisfied (no assertions specified)"
@@ -380,6 +523,8 @@ class TaskContract:
             summary=summary,
             assertions=results,
             budget_exceeded=budget_viol,
+            test_hashes=recorded_hashes if recorded_hashes else (self.test_hashes or None),
+            test_tampering=tampered_files if tampered_files else None,
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -395,6 +540,10 @@ class TaskContract:
         if self.deadline_s is not None:
             d["deadline_s"] = self.deadline_s
         d["assertions"] = [a.to_dict() for a in self.assertions]
+        if self.test_files:
+            d["test_files"] = self.test_files
+        if self.test_hashes:
+            d["test_hashes"] = self.test_hashes
         return d
 
     @classmethod
@@ -413,6 +562,7 @@ class TaskContract:
                         expected_exit_code=raw.get("expected_exit_code", 0),
                         name=raw.get("name"),
                         timeout_s=float(raw.get("timeout_s", 30.0)),
+                        allow_unsafe_host_exec=bool(raw.get("allow_unsafe_host_exec", False)),
                     )
                 )
         return cls(
@@ -422,4 +572,6 @@ class TaskContract:
             max_duration_s=data.get("max_duration_s"),
             deadline_s=data.get("deadline_s"),
             assertions=assertions,
+            test_files=data.get("test_files", []),
+            test_hashes=data.get("test_hashes", {}),
         )
