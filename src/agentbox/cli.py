@@ -107,7 +107,53 @@ def _verify_and_print(path, key=None) -> int:
     return EXIT_OK
 
 
+
+def _verify_bundle(args) -> int:
+    """Verify a log packed inside an evidence bundle (.zip / .tar.gz)."""
+    from .bundle import extract_bundle
+
+    try:
+        dest = extract_bundle(args.logfile)
+    except (ValueError, OSError) as e:
+        raise CliError(f"cannot extract bundle: {e}")
+
+    try:
+        log = Path(dest) / "audit.ndjson"
+        if not log.exists():
+            raise CliError("bundle does not contain audit.ndjson")
+
+        # Rename manifest so verify_log can find it by convention
+        bundled_manifest = Path(dest) / "manifest.json"
+        if bundled_manifest.exists():
+            bundled_manifest.rename(Path(dest) / "audit.manifest.json")
+
+        receipt = getattr(args, "receipt", None)
+        pubkey = getattr(args, "pubkey", None)
+        key_arg = getattr(args, "key", None)
+
+        if receipt is None:
+            r = Path(dest) / "receipt.json"
+            if r.exists():
+                receipt = str(r)
+        if pubkey is None:
+            p = Path(dest) / "public.key"
+            if p.exists():
+                pubkey = str(p)
+
+        inner = argparse.Namespace(
+            logfile=str(log), receipt=receipt, pubkey=pubkey, key=key_arg,
+        )
+        print(f"Verifying bundle: {Path(args.logfile).name}")
+        return cmd_verify(inner)
+    finally:
+        shutil.rmtree(dest, ignore_errors=True)
+
+
 def cmd_verify(args) -> int:
+    from .bundle import is_bundle
+    if is_bundle(args.logfile) and Path(args.logfile).is_file():
+        return _verify_bundle(args)
+
     _check_readable(args.logfile)
 
     receipt_file = getattr(args, "receipt", None)
@@ -359,6 +405,40 @@ def cmd_demo(args) -> int:
     return code if code != EXIT_OK else (EXIT_OK if out["reason"] == "final_answer" else 1)
 
 
+
+def cmd_bundle(args) -> int:
+    """Package a log into a self-contained evidence archive."""
+    from .bundle import create_bundle
+
+    _check_readable(args.logfile)
+    fmt = getattr(args, "format", "zip") or "zip"
+    output = getattr(args, "output", None)
+    pubkey = getattr(args, "pubkey", None)
+
+    if pubkey is None and DEFAULT_ED25519_PUB_PATH.exists():
+        pubkey = str(DEFAULT_ED25519_PUB_PATH)
+
+    try:
+        path = create_bundle(args.logfile, output=output, pubkey_path=pubkey, fmt=fmt)
+    except (ValueError, OSError) as e:
+        raise CliError(str(e))
+
+    import zipfile as _zf
+    import tarfile as _tf
+    if fmt == "zip":
+        with _zf.ZipFile(path) as zf:
+            names = sorted(zf.namelist())
+    else:
+        with _tf.open(path) as tf:
+            names = sorted(tf.getnames())
+
+    print(f"Evidence bundle created: {path}")
+    print(f"  Format: {fmt}")
+    for n in names:
+        print(f"  - {n}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="agentbox")
     p.add_argument("--version", action="version", version=f"agentbox {__version__}")
@@ -406,6 +486,17 @@ def build_parser() -> argparse.ArgumentParser:
     rp_.add_argument("--key", "-k", default=None, help="HMAC symmetric key file")
     rp_.set_defaults(fn=cmd_replay)
     
+
+    b = sub.add_parser("bundle", help="package a log into a self-contained evidence archive")
+    b.add_argument("logfile")
+    b.add_argument("--output", "-o", default=None,
+                   help="output path (default: evidence-<session>.zip)")
+    b.add_argument("--format", "-f", choices=["zip", "tar.gz"], default="zip",
+                   help="archive format (default: zip)")
+    b.add_argument("--pubkey", "-p", default=None,
+                   help="Ed25519 public key to include (default: ~/.agentbox/ed25519.pub)")
+    b.set_defaults(fn=cmd_bundle)
+
     ls = sub.add_parser("list", help="list the logs in a directory (default: ./runs)")
     ls.add_argument("directory", nargs="?", default="runs")
     ls.set_defaults(fn=cmd_list)
