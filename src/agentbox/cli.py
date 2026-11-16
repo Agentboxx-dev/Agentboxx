@@ -71,7 +71,25 @@ def _run_verify(path, key=None):
     except (KeyError, TypeError, AttributeError):
         return ["a record is malformed (not a valid agentbox record)"], []
 
-
+def _print_tool_call_summary(path) -> None:
+    """After a log verified, say how many tool calls it holds (nothing if there are none)."""
+    total = failed = 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    ev = json.loads(line)["event"]
+                    if ev["event_type"] == "tool.call":
+                        total += 1
+                        failed += bool((ev.get("data") or {}).get("is_error"))
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except OSError:
+        return
+    if total:
+        print(f"  {total} tool call{'s' if total != 1 else ''} recorded and verified"
+              + (f" ({failed} failed)" if failed else "") + ".")
+        
 def _verify_and_print(path, key=None) -> int:
     problems, incomplete = _run_verify(path, key)
     if problems:
@@ -85,6 +103,7 @@ def _verify_and_print(path, key=None) -> int:
             print("  -", p)
         return EXIT_INCOMPLETE
     print("OK: log is intact (chain and signatures valid).")
+    _print_tool_call_summary(path)
     return EXIT_OK
 
 
@@ -113,6 +132,7 @@ def cmd_verify(args) -> int:
         key_id = payload.get("key_id", "unknown") if payload else "unknown"
         records = payload.get("record_count", 0) if payload else 0
         print(f"OK: Ed25519 receipt verified ({records} records, key ID {key_id}). Log is intact.")
+        _print_tool_call_summary(args.logfile)
         return EXIT_OK
 
     # Standard HMAC verification mode

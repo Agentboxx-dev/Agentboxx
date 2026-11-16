@@ -249,6 +249,25 @@
               }
             }
           }
+        },
+        {
+          "if": { 
+            "properties": { 
+              "event_type": { 
+                "const": "tool.call" 
+              } 
+            }, 
+            "required": [
+              "event_type"
+            ] 
+          },
+          "then": { 
+            "properties": { 
+              "data": { 
+                "$ref": "#/$defs/tool_call" 
+              } 
+            } 
+          }
         }
       ]
     },
@@ -605,6 +624,28 @@
         "ts": {
           "type": "number"
         }
+      }
+    },
+    "tool_call": {
+      "type": "object",
+      "required": ["session_id", "step_index", "tool_name", "tool_source", "arguments", "result", "is_error", "duration_ms"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "step_index": { "type": "integer", "minimum": 1, "description": "Shares the counter with step events: a tool call is one step" },
+        "tool_name": { "type": "string", "description": "Redacted" },
+        "tool_source": { "type": "string", "description": "Free text. Suggested: mcp:<server>, builtin, langchain, function" },
+        "arguments": { "description": "Any JSON value (redacted). If larger than 64 KB when serialized, it is replaced by an object with text, total_bytes, truncated=true and sha256, and the matching *_truncated flag is true." },
+        "result": { "description": "Any JSON value (redacted). If larger than 64 KB when serialized, it is replaced by an object with text, total_bytes, truncated=true and sha256, and the matching *_truncated flag is true." },
+        "is_error": { "type": "boolean" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "thought": { "type": "string", "description": "The model's reasoning, redacted" },
+        "workspace_hash": { "type": "string" },
+        "redactions": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "Count of secrets removed per pattern, never the values" },
+        "arguments_truncated": { "type": "boolean" },
+        "result_truncated": { "type": "boolean" },
+        "agent_id": { "type": "string" },
+        "parent_step_index": { "type": "integer", "minimum": 1 },
+        "usage": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "Token counts supplied by the caller, never computed by agentbox" }
       }
     }
   }

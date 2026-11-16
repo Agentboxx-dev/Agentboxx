@@ -44,6 +44,7 @@ The first record has `prev_hash = GENESIS`. Every later record has `prev_hash` e
 |---|---|---|
 | `session.start` | Once, first | `session_id`, `isolation` (`backend`, plus image, network and limits for Docker), optional `agent_id`, optional `contract` |
 | `step` | After each command | `step_index`, `thought`, `command`, `exit_code`, `timed_out`, `output_limit_exceeded`, `stdout`, `stderr`, `error_signature`, `error_class`, `workspace_hash`, `duration_ms`, `redactions`, optional `agent_id`, `tool`, `parent_step_index`, `usage` |
+| `tool.call` | After each tool call (for example MCP) | `step_index`, `tool_name`, `tool_source`, `arguments`, `result`, `is_error`, `duration_ms`, `thought`, `workspace_hash`, `redactions`, optional `arguments_truncated`, `result_truncated`, `agent_id`, `parent_step_index`, `usage` |
 | `analysis.signal` | A detector fired | `step_index`, `kind`, `severity`, `count`, `hint` |
 | `sandbox.resource` | Docker backend, after each step | `step_index`, `mem_bytes`, `mem_limit_bytes`, `mem_pct`, `cpu_pct`, `pids` |
 | `sandbox.crash` | OOM kill or stopped container | `step_index`, `kind`, `exit_code`, `running`, `oom_killed`, `oom_events` |
@@ -52,6 +53,23 @@ The first record has `prev_hash = GENESIS`. Every later record has `prev_hash` e
 | `session.end` | Once, last, when closed | `reason`, `steps` |
 
 Commands, output and `thought` are redacted before they are hashed. `redactions` counts how many secrets were removed per pattern, never the values. `usage` holds token counts supplied by the caller; agentbox never computes them. A stream (`stdout`, `stderr`) holds `text` (the head and tail of the output), `total_bytes`, `truncated` and a `sha256` of the stored text.
+
+### Tool calls
+
+Agents built on the Model Context Protocol, the OpenAI Agents SDK or LangChain act through tool calls rather than shell commands. `Recorder.record_tool_call(...)` records one as a `tool.call` event, signed and chained like every other record.
+
+~~~python
+rec.record_tool_call(tool_name="search_issues", tool_source="mcp:github",
+                     arguments={"query": "is:open label:bug"}, result={"total": 3},
+                     duration_ms=412)
+~~~
+
+- **It is a step.** A tool call takes the next `step_index`, shared with `step` events. It counts toward a contract's `max_steps`, feeds the loop detectors (the same tool with the same arguments on unchanged files repeats like a command does), and appears in `agentbox replay`.
+- **`tool_source` is free text**, so verifiers never reject a custom value. Suggested forms: `mcp:<server>` (for example `mcp:filesystem`, `mcp:github`), `builtin`, `langchain`, `function`.
+- **`arguments` and `result` are redacted before they are hashed.** Every string and key goes through the same patterns as commands. A string stored under a key named like a secret (`password`, `token`, `api_key`, `authorization`...) is replaced whole as `[REDACTED:secret_key]`, because structured data has no `name=value` text for a pattern to match. Numbers and booleans are kept. `redactions` counts what was removed, never the values.
+- **Size cap: 64 KB** (65,536 serialized bytes) per field. A larger value is replaced by an object with `text` (head and tail), `total_bytes`, `truncated: true` and `sha256`, the hash of the whole redacted serialization, and `arguments_truncated` or `result_truncated` is `true`. Values that fit are stored unchanged.
+- **`is_error`** marks a failed call. The error text in `result` feeds the same error-repeat detector as stderr does.
+- **JSON only.** Values are made JSON-safe before they are written: keys become strings, bytes are decoded, and `NaN` or infinity become strings, so any verifier can read the log.
 
 ## The closing manifest
 

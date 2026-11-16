@@ -72,15 +72,15 @@ def _frame_body(frame: Frame, height: int) -> RenderableType:
     thought = Text(sanitize(frame.thought) if frame.thought else "(none)", style="italic")
 
     code = "timed out" if frame.timed_out else ("?" if frame.exit_code is None else str(frame.exit_code))
-    cmd_title = Text("COMMAND  ", style=f"bold {AMBER}")
+    cmd_title = Text(f"{frame.label} ", style=f"bold {AMBER}")
     cmd_title.append(f"(exit code: {code} | duration: {fmt_duration(frame.duration_ms)})",
                      style="bold red" if frame.failed else "dim")
     cmd = Table.grid(padding=(0, 1))
     cmd.add_column(no_wrap=True)
     cmd.add_column(ratio=1)
-    cmd.add_row(Text("$", style=f"bold {AMBER}"),
-                Syntax(sanitize(frame.command), "bash", theme="ansi_dark", background_color="default",
-                       word_wrap=True))
+    shown = (Syntax(sanitize(frame.command), "bash", theme="ansi_dark", background_color="default",
+                    word_wrap=True) if frame.kind == "step" else Text(sanitize(frame.command)))
+    cmd.add_row(Text("$" if frame.kind == "step" else "▸", style=f"bold {AMBER}"), shown)
 
     limit = max(height - _CHROME_ROWS, 3)
     out = Text()

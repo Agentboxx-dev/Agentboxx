@@ -1,13 +1,14 @@
 """The main API. Wrap every action your agent takes in `recorder.run(...)`."""
 import hashlib
+import time
 from pathlib import Path
 
+from .contract import ContractVerdict, TaskContract
 from .executor import error_signature, fingerprint, run_command
 from .loop_detector import LoopConfig, LoopDetector
-from .redact import merge_counts, redact, redact_all
+from .redact import merge_counts, redact, redact_all, redact_value
 from .signer import ChainWriter, load_or_create_key, load_ed25519_private_key
-import time
-from .contract import ContractVerdict, TaskContract
+from .toolcall import MAX_PAYLOAD_BYTES, as_text, cap_payload, serialize, to_jsonable
 from .workspace import workspace_hash
 
 
@@ -19,9 +20,14 @@ def _crash_kind(sbx: dict):
     return None
 
 
-def _make_stream_record(text: str, total_bytes: int | None = None, truncated: bool = False) -> dict:
+def _make_stream_record(
+    text: str,
+    total_bytes: int | None = None,
+    truncated: bool = False,
+) -> dict:
     encoded = text.encode("utf-8")
     tb = len(encoded) if total_bytes is None else total_bytes
+
     return {
         "text": text,
         "total_chars": tb,
@@ -32,39 +38,59 @@ def _make_stream_record(text: str, total_bytes: int | None = None, truncated: bo
 
 
 class Recorder:
-    def __init__(self, session_id: str, workspace: str = "./workspace",
-                 log_dir: str = "./runs", key_path=None,
-                 loop_cfg: LoopConfig | None = None, sandbox=None,
-                 overwrite: bool = False, agent_id: str | None = None,
-                 ed25519_key_path=None, contract: TaskContract | dict | None = None):
-        self.session_id, self.workspace, self.sandbox = session_id, workspace, sandbox
+    def __init__(
+        self,
+        session_id: str,
+        workspace: str = "./workspace",
+        log_dir: str = "./runs",
+        key_path=None,
+        loop_cfg: LoopConfig | None = None,
+        sandbox=None,
+        overwrite: bool = False,
+        agent_id: str | None = None,
+        ed25519_key_path=None,
+        contract: TaskContract | dict | None = None,
+    ):
+        self.session_id, self.workspace, self.sandbox = (
+            session_id,
+            workspace,
+            sandbox,
+        )
         self.agent_id = agent_id
         self.log_path = Path(log_dir) / f"{session_id}.ndjson"
         self.ed25519_key = load_ed25519_private_key(ed25519_key_path)
+
         self.writer = ChainWriter(
             self.log_path,
             load_or_create_key(key_path),
             overwrite=overwrite,
             ed25519_key=self.ed25519_key,
         )
+
         self.detector = LoopDetector(loop_cfg)
         self.step_index = 0
         self.closed = False
+
         if isinstance(contract, dict):
             self.contract: TaskContract | None = TaskContract.from_dict(contract)
         elif isinstance(contract, TaskContract):
             self.contract = contract
         else:
             self.contract = None
+
         self.contract_verdict: ContractVerdict | None = None
         self.start_wall_clock = time.monotonic()
         self.cumulative_duration_ms = 0
+
         isolation = sandbox.describe() if sandbox else {"backend": "local"}
         start = {"session_id": session_id, "isolation": isolation}
+
         if agent_id:
             start["agent_id"] = agent_id
+
         if self.contract:
             start["contract"] = self.contract.to_dict()
+
         self.writer.append("session.start", start)
 
     def record_step(
@@ -85,12 +111,19 @@ class Recorder:
     ) -> dict:
         """Record an already-executed action (e.g. from an agent framework callback)."""
         self.step_index += 1
-        command, stdout, stderr, redactions = redact_all(command, stdout, stderr)
+
+        command, stdout, stderr, redactions = redact_all(
+            command, stdout, stderr
+        )
         thought, t_counts = redact(thought)
         redactions = merge_counts(redactions, t_counts)
 
         sig, cls = error_signature(stderr, exit_code)
-        ws_hash = workspace_hash_val if workspace_hash_val is not None else workspace_hash(self.workspace)
+        ws_hash = (
+            workspace_hash_val
+            if workspace_hash_val is not None
+            else workspace_hash(self.workspace)
+        )
 
         out_stream = _make_stream_record(stdout)
         err_stream = _make_stream_record(stderr)
@@ -116,12 +149,16 @@ class Recorder:
             "thought": thought,
             **obs,
         }
+
         if self.agent_id:
             step["agent_id"] = self.agent_id
+
         if tool:
             step["tool"] = tool
+
         if parent_step is not None:
             step["parent_step_index"] = int(parent_step)
+
         if usage:
             step["usage"] = {str(k): int(v) for k, v in usage.items()}
 
@@ -129,88 +166,280 @@ class Recorder:
 
         self.cumulative_duration_ms += duration_ms
         signals = self.detector.observe(step)
-        for s in signals:
-            self.writer.append("analysis.signal", {"step_index": self.step_index, **s})
 
-        if self.contract and not self.closed:
-            step_viol = self.contract.check_step_budget(self.step_index)
-            if step_viol:
-                self.close(reason="contract_budget_exceeded:max_steps")
-            else:
-                wall_s = time.monotonic() - self.start_wall_clock
-                dead_viol = self.contract.check_deadline_budget(wall_s)
-                if dead_viol:
-                    self.close(reason="contract_budget_exceeded:deadline_s")
+        for signal in signals:
+            self.writer.append(
+                "analysis.signal",
+                {"step_index": self.step_index, **signal},
+            )
+
+        self._enforce_contract_budgets()
 
         return {"observation": obs, "signals": signals}
 
-    def run(self, command: str, thought: str = "", timeout_s: int = 60, *,
-            tool: str | None = None, parent_step: int | None = None,
-            usage: dict | None = None) -> dict:
+    def record_tool_call(
+        self,
+        *,
+        tool_name: str,
+        tool_source: str,
+        arguments=None,
+        result=None,
+        duration_ms: int = 0,
+        is_error: bool = False,
+        thought: str = "",
+        parent_step: int | None = None,
+        usage: dict | None = None,
+        workspace_hash_val: str | None = None,
+    ) -> dict:
+        """Record an already-executed tool call (for example an MCP tool call).
+
+        It is one step: it takes the next `step_index`, counts toward the
+        contract's max_steps and feeds the loop detector, the same as a shell
+        command. `arguments` and `result` may be any JSON-like value. Secrets
+        are removed before anything is written, and a value larger than
+        64 KB is cut to its head and tail with its size and SHA-256 kept.
+
+        `tool_source` is free text. Suggested forms: "mcp:<server>"
+        (for example "mcp:github"), "builtin", "langchain", "function".
+        """
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            raise ValueError("tool_name must be a non-empty string")
+
+        if not isinstance(tool_source, str) or not tool_source.strip():
+            raise ValueError(
+                "tool_source must be a non-empty string "
+                "(for example 'mcp:github')"
+            )
+
+        duration_ms = max(int(duration_ms), 0)
+
         self.step_index += 1
+
+        tool_name, c_name = redact(tool_name)
+        tool_source, c_src = redact(tool_source)
+        thought, c_thought = redact(thought)
+
+        args, c_args = redact_value(to_jsonable(arguments))
+        res, c_res = redact_value(to_jsonable(result))
+
+        redactions = merge_counts(
+            c_name,
+            c_src,
+            c_thought,
+            c_args,
+            c_res,
+        )
+
+        ws_hash = (
+            workspace_hash_val
+            if workspace_hash_val is not None
+            else workspace_hash(self.workspace)
+        )
+
+        # The loop detector sees the same call on unchanged files as a repeat.
+        # The fingerprint is exact, not normalized like a command's.
+        err_text = as_text(res) if is_error else ""
+        sig, _cls = error_signature(err_text, 1 if is_error else 0)
+
+        observed = {
+            "command_fingerprint": hashlib.sha256(
+                f"tool {tool_source} {tool_name} ".encode()
+                + serialize(args)
+            ).hexdigest()[:16],
+            "workspace_hash": ws_hash,
+            "exit_code": 1 if is_error else 0,
+            "error_signature": sig,
+        }
+
+        args, args_cut = cap_payload(args, MAX_PAYLOAD_BYTES)
+        res, res_cut = cap_payload(res, MAX_PAYLOAD_BYTES)
+
+        call = {
+            "session_id": self.session_id,
+            "step_index": self.step_index,
+            "tool_name": tool_name,
+            "tool_source": tool_source,
+            "arguments": args,
+            "result": res,
+            "is_error": bool(is_error),
+            "duration_ms": duration_ms,
+            "thought": thought,
+            "workspace_hash": ws_hash,
+            "redactions": redactions,
+        }
+
+        if args_cut:
+            call["arguments_truncated"] = True
+
+        if res_cut:
+            call["result_truncated"] = True
+
+        if self.agent_id:
+            call["agent_id"] = self.agent_id
+
+        if parent_step is not None:
+            call["parent_step_index"] = int(parent_step)
+
+        if usage:
+            call["usage"] = {str(k): int(v) for k, v in usage.items()}
+
+        self.writer.append("tool.call", call)
+
+        self.cumulative_duration_ms += duration_ms
+        signals = self.detector.observe(observed)
+
+        for signal in signals:
+            self.writer.append(
+                "analysis.signal",
+                {"step_index": self.step_index, **signal},
+            )
+
+        self._enforce_contract_budgets()
+
+        return {"observation": call, "signals": signals}
+
+    def _enforce_contract_budgets(self):
+        if self.contract and not self.closed:
+            if self.contract.check_step_budget(self.step_index):
+                self.close(reason="contract_budget_exceeded:max_steps")
+            elif self.contract.check_deadline_budget(
+                time.monotonic() - self.start_wall_clock
+            ):
+                self.close(reason="contract_budget_exceeded:deadline_s")
+
+    def run(
+        self,
+        command: str,
+        thought: str = "",
+        timeout_s: int = 60,
+        *,
+        tool: str | None = None,
+        parent_step: int | None = None,
+        usage: dict | None = None,
+    ) -> dict:
+        self.step_index += 1
+
         if self.sandbox:
             obs = self.sandbox.run(command, timeout_s)
         else:
             obs = run_command(command, self.workspace, timeout_s)
-        sbx = obs.pop("sandbox", None)      # reported as separate events, not inside the step
+
+        sbx = obs.pop("sandbox", None)
+
         thought, t_counts = redact(thought)
         redactions = merge_counts(obs.get("redactions", {}), t_counts)
-        step = {"session_id": self.session_id, "step_index": self.step_index,
-                "thought": thought, **obs, "redactions": redactions}
+
+        step = {
+            "session_id": self.session_id,
+            "step_index": self.step_index,
+            "thought": thought,
+            **obs,
+            "redactions": redactions,
+        }
+
         if self.agent_id:
             step["agent_id"] = self.agent_id
+
         if tool:
             step["tool"] = tool
+
         if parent_step is not None:
             step["parent_step_index"] = int(parent_step)
+
         if usage:
-            step["usage"] = {str(k): int(v) for k, v in usage.items()}   # from the caller, never computed
+            step["usage"] = {
+                str(k): int(v) for k, v in usage.items()
+            }
+
         self.writer.append("step", step)
+
         if sbx:
-            metrics = {k: sbx.get(k) for k in ("mem_bytes", "mem_limit_bytes", "mem_pct", "cpu_pct", "pids")}
-            self.writer.append("sandbox.resource", {"step_index": self.step_index, **metrics})
+            metrics = {
+                k: sbx.get(k)
+                for k in (
+                    "mem_bytes",
+                    "mem_limit_bytes",
+                    "mem_pct",
+                    "cpu_pct",
+                    "pids",
+                )
+            }
+
+            self.writer.append(
+                "sandbox.resource",
+                {"step_index": self.step_index, **metrics},
+            )
+
             kind = _crash_kind(sbx)
+
             if kind:
-                self.writer.append("sandbox.crash", {"step_index": self.step_index, "kind": kind,
-                                                     "exit_code": obs.get("exit_code"), **sbx})
+                self.writer.append(
+                    "sandbox.crash",
+                    {
+                        "step_index": self.step_index,
+                        "kind": kind,
+                        "exit_code": obs.get("exit_code"),
+                        **sbx,
+                    },
+                )
+
         egress_events = obs.pop("egress_events", None)
+
         if egress_events:
-            for ev in egress_events:
-                self.writer.append("network.egress", {"step_index": self.step_index, **ev})
+            for event in egress_events:
+                self.writer.append(
+                    "network.egress",
+                    {"step_index": self.step_index, **event},
+                )
+
         self.cumulative_duration_ms += obs.get("duration_ms", 0)
         signals = self.detector.observe(step)
-        for s in signals:
-            self.writer.append("analysis.signal", {"step_index": self.step_index, **s})
 
-        if self.contract and not self.closed:
-            step_viol = self.contract.check_step_budget(self.step_index)
-            if step_viol:
-                self.close(reason="contract_budget_exceeded:max_steps")
-            else:
-                wall_s = time.monotonic() - self.start_wall_clock
-                dead_viol = self.contract.check_deadline_budget(wall_s)
-                if dead_viol:
-                    self.close(reason="contract_budget_exceeded:deadline_s")
+        for signal in signals:
+            self.writer.append(
+                "analysis.signal",
+                {"step_index": self.step_index, **signal},
+            )
 
-        return {"observation": obs, "signals": signals, "sandbox": sbx}
+        self._enforce_contract_budgets()
+
+        return {
+            "observation": obs,
+            "signals": signals,
+            "sandbox": sbx,
+        }
 
     def close(self, reason: str = "done"):
         if self.closed:
             return
+
         self.closed = True
+
         if self.contract:
             elapsed_wall_s = time.monotonic() - self.start_wall_clock
-            cum_dur_s = self.cumulative_duration_ms / 1000.0
+            cumulative_duration_s = self.cumulative_duration_ms / 1000.0
+
             self.contract_verdict = self.contract.evaluate(
                 workspace=self.workspace,
                 steps=self.step_index,
-                cumulative_duration_s=cum_dur_s,
+                cumulative_duration_s=cumulative_duration_s,
                 elapsed_wall_clock_s=elapsed_wall_s,
             )
-            self.writer.append("contract.verdict", self.contract_verdict.to_dict())
-        self.writer.append("session.end", {"reason": reason, "steps": self.step_index})
+
+            self.writer.append(
+                "contract.verdict",
+                self.contract_verdict.to_dict(),
+            )
+
+        self.writer.append(
+            "session.end",
+            {"reason": reason, "steps": self.step_index},
+        )
+
         self.writer.write_manifest()
+
         if self.ed25519_key:
             self.writer.write_receipt(session_id=self.session_id)
+
         if self.sandbox:
             self.sandbox.stop()
