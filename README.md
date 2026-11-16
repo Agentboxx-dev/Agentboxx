@@ -15,7 +15,7 @@
 </div>
 
 > [!NOTE]
-> **v0.3.0.** Live on [PyPI](https://pypi.org/project/agentboxx/) (`pip install agentboxx`). Validated end-to-end with sandboxed execution, cryptographic signing, loop detection, and live model execution. Interfaces may evolve before v1.0. Known gaps are listed under [Limitations](#limitations).
+> **v0.3.1.** Live on [PyPI](https://pypi.org/project/agentboxx/) (`pip install agentboxx`). Validated end-to-end with sandboxed execution, cryptographic signing, loop detection, and live model execution. Interfaces may evolve before v1.0. Known gaps are listed under [Limitations](#limitations).
 
 ---
 
@@ -39,12 +39,16 @@ Most agent tooling records what the agent *says* it did, from inside the agent's
 
 | Module | Role |
 |---|---|
-| `signer.py` | Hash-chained event log, HMAC signatures and Ed25519 run receipts |
-| `executor.py` | Local command runner, error fingerprints, workspace hashing |
-| `docker_backend.py` | Runs commands in a locked-down container |
-| `loop_detector.py` | Exact repeat, repeated error, no-progress and cycle detection |
-| `recorder.py` | Main API: `Recorder.run(command)` |
-| `agent.py` | Minimal ReAct-style loop that feeds detector hints back to the model |
+| `signer.py` | Hash-chained event log, HMAC signatures, and Ed25519 run receipts |
+| `contract.py` | Task contracts, step/duration/deadline budgets, safe file and command assertions |
+| `bundle.py` | Self-contained signed evidence bundles for offline auditing (`agentbox bundle`) |
+| `docker_backend.py` | Hardened container sandbox and ephemeral evaluation container |
+| `egress_proxy.py` | Outbound network filtering proxy with connection audit logging |
+| `loop_detector.py` | State-aware repeat, repeated error, no-progress, and cycle detection |
+| `toolcall.py` | First-class MCP and function tool-call recording with payload capping |
+| `executor.py` | Command execution, process-tree termination, workspace hashing |
+| `recorder.py` | Main API: `Recorder.run()`, `record_step()`, `record_tool_call()` |
+| `agent.py` | ReAct-style agent loop that injects detector hints back into observations |
 
 ## Quick start
 
@@ -81,6 +85,8 @@ agentbox keygen                          # generate Ed25519 keypair (~/.agentbox
 agentbox report runs/agent-demo.ndjson   # readable summary
 agentbox verify runs/agent-demo.ndjson   # symmetric integrity check
 agentbox verify runs/agent-demo.ndjson --pubkey ~/.agentbox/ed25519.pub  # public-key receipt check
+agentbox bundle runs/agent-demo.ndjson -o demo.agentbox.zip              # package self-contained offline evidence bundle
+agentbox verify demo.agentbox.zip                                        # verify directly from offline archive
 agentbox replay runs/agent-demo.ndjson   # step through a session in an interactive terminal player
 agentbox --version
 ~~~

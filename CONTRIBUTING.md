@@ -39,7 +39,7 @@ Without discussion in the issue first, PRs should not:
 - change detector thresholds (they need data from many real runs)
 - modify `.github/workflows/`
 - change the signing or verification logic in `signer.py`
-- add dependencies. The core package uses only the standard library, and optional ones (like `anthropic`) must be imported lazily so the package works without them.
+- add new dependencies. The core package relies only on the Python standard library plus `cryptography` (for Ed25519 public-key receipts). Integrations (like `anthropic`, `langchain`) must remain lazy optional dependencies so the package installs and runs without them.
 
 ## Tests
 

@@ -28,4 +28,4 @@ __all__ = [
     "assert_file_hash",
     "assert_command",
 ]
-__version__ = "0.3.0"
+__version__ = "0.3.1"
