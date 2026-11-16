@@ -6,7 +6,13 @@ import shutil
 import re
 import time
 
-from .error_signatures import extract_go, extract_node
+from .error_signatures import (
+    extract_go,
+    extract_java,
+    extract_node,
+    extract_ruby,
+    extract_rust,
+)
 from .redact import redact_all
 from .streaming import DEFAULT_MAX_STREAM_BYTES, run_streaming
 from .workspace import workspace_hash
@@ -36,7 +42,13 @@ def error_signature(stderr: str, exit_code: int):
     if exit_code == 0 or not stderr.strip():
         return None, None
     if "Traceback (most recent call last)" not in stderr:
-        found = extract_go(stderr) or extract_node(stderr)
+        found = (
+            extract_go(stderr)
+            or extract_rust(stderr)
+            or extract_java(stderr)
+            or extract_ruby(stderr)
+            or extract_node(stderr)
+        )
         if found:
             cls, msg = found
             return f"{cls}:{fingerprint(cls + ' ' + msg)}", cls
