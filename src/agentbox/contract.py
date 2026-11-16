@@ -38,7 +38,8 @@ def _safe_resolve(workspace: Path, target: str) -> Path:
     Rejects absolute paths, literal ``..`` traversal, and symlinked
     intermediate directories that escape the workspace.
     """
-    if Path(target).is_absolute():
+    # Catch absolute paths across POSIX and Windows (including drive letters and root-relative /paths)
+    if Path(target).is_absolute() or target.startswith(("/", "\\")) or (len(target) > 1 and target[1] == ":"):
         raise UnsafePath(f"absolute paths are forbidden in assertions: {target}")
 
     ws = workspace.resolve()
