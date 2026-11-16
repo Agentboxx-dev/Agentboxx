@@ -293,10 +293,11 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 
 ## Threat model
 
-- **Docker backend:** commands run as a non-root user in a container with no network, a read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, and CPU, memory and process limits. The signing key and logs stay on the host and are never mounted into the container.
-- **Local backend:** no isolation. The agent runs as your user and could read the signing key. Use it only for trusted experiments.
-- Docker isolation is strong but not a perfect boundary. Run untrusted agents in a disposable VM.
-- The log shows that records were not altered after writing. It does not prove the agent's intent, and it cannot see anything that bypasses the executor.
+- **Docker backend (Recommended & Primary Boundary):** Commands run as a non-root user in a container with disabled network (or explicit domain allowlisting via `EgressPolicy`), a read-only root filesystem, all Linux capabilities dropped (`--cap-drop ALL`), `no-new-privileges:true`, and strict CPU, memory and process limits. The signing key and logs remain strictly on the host and are never mounted into the container. Contract assertion commands (`assert_command`) execute in fresh, ephemeral containers with workspace mounted read-only (`:ro`).
+- **Local backend (Dev-Only / Untrusted-Unsupported):** The local backend provides **no isolation boundary**. Commands execute with your host user privileges and could access host files or the signing key. It is strictly intended for local development, unit tests, and trusted experiments. Untrusted workloads are explicitly **unsupported** on the local backend. As a defense-in-depth safeguard, contract `assert_command` execution is refused on the local backend unless `allow_unsafe_host_exec=True` is explicitly specified (which emits a high-severity security warning).
+- **File & Contract Assertions:** Host-side file assertions use `_safe_resolve()`, `_safe_read()`, and `_safe_lstat()` to reject symlinks, FIFOs, device nodes, and path traversal escaping the workspace. Test suite files are integrity-hashed prior to agent execution to detect and record any tampering.
+- **Defense in depth:** Docker isolation is strong but not an absolute hypervisor boundary. In production or multi-tenant environments, run Docker inside disposable virtual machines.
+- **Log integrity:** Hash-chained records and Ed25519 run receipts prove that records were not altered, reordered, or forged after execution; they do not prove model intent and cannot capture operations that bypass the registered execution harness.
 
 ## Limitations
 
@@ -321,7 +322,7 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 - [x] Validate against a live model ([#5](https://github.com/Agentboxx-dev/Agentboxx/issues/5))
 - [x] Network egress filtering proxy & connection audit events ([#24](https://github.com/Agentboxx-dev/Agentboxx/issues/24))
 - [x] Session replay UI ([#29](https://github.com/Agentboxx-dev/Agentboxx/issues/29))
-- [ ] First-class MCP tool-call recording ([#50](https://github.com/Agentboxx-dev/Agentboxx/issues/50))
+- [x] First-class MCP tool-call recording ([#50](https://github.com/Agentboxx-dev/Agentboxx/issues/50))
 - [ ] Semantic drift detector
 - [ ] Threshold calibration on recorded sessions
 
