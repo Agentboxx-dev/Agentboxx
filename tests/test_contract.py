@@ -77,18 +77,24 @@ def test_command_assertion(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
 
-    # Successful command
-    a_pass = assert_command(f'"{_PY}" -c \'print("check passed")\'')
+    # Refused by default on local backend without allow_unsafe_host_exec=True
+    a_refused = assert_command(f'"{_PY}" -c \'print("blocked")\'')
+    res_refused = a_refused.check(ws)
+    assert res_refused.passed is False
+    assert "refused on local backend without allow_unsafe_host_exec=True" in res_refused.details
+
+    # Successful command with explicit allow_unsafe_host_exec=True
+    a_pass = assert_command(f'"{_PY}" -c \'print("check passed")\'', allow_unsafe_host_exec=True)
     assert a_pass.check(ws).passed is True
 
     # Failing command (non-zero exit code)
-    a_fail = assert_command(f'"{_PY}" -c \'import sys; sys.exit(42)\'')
+    a_fail = assert_command(f'"{_PY}" -c \'import sys; sys.exit(42)\'', allow_unsafe_host_exec=True)
     res_fail = a_fail.check(ws)
     assert res_fail.passed is False
     assert "Exit code 42 != 0" in res_fail.details
 
     # Timeout
-    a_timeout = Assertion(kind="command", target=f'"{_PY}" -c \'import time; time.sleep(1)\'', timeout_s=0.05)
+    a_timeout = Assertion(kind="command", target=f'"{_PY}" -c \'import time; time.sleep(1)\'', timeout_s=0.05, allow_unsafe_host_exec=True)
     res_to = a_timeout.check(ws)
     assert res_to.passed is False
     assert "timed out" in res_to.details
