@@ -22,16 +22,16 @@
 <text x="20" y="372" fill="#f85149" font-size="11" font-weight="600" letter-spacing="1">OUTSIDE YOUR CONTROL</text>
 <text x="20" y="390" fill="#8b949e" font-size="11.5">Model provider sees redacted</text>
 <text x="20" y="406" fill="#8b949e" font-size="11.5">output only.</text>
-<rect x="260" y="60" width="380" height="84" rx="10" fill="#161b22" stroke="#6e7681" stroke-width="2" stroke-dasharray="6 4"/>
+<rect x="260" y="60" width="380" height="84" rx="10" fill="#161b22" stroke="#3fb950" stroke-width="2"/>
 <text x="274" y="84" fill="#e6edf3" font-size="14" font-weight="600">1  Task contract</text>
-<text x="274" y="104" fill="#8b949e" font-size="11.5">○ goal, step / time / output limits</text>
-<text x="274" y="122" fill="#8b949e" font-size="11.5">○ host-run success check · allowed commands</text>
-<text x="628" y="82" fill="#6e7681" font-size="10" font-weight="600" text-anchor="end">PLANNED</text>
+<text x="274" y="104" fill="#8b949e" font-size="11.5">✓ step / duration / deadline budgets</text>
+<text x="274" y="122" fill="#8b949e" font-size="11.5">✓ safe file assertions · sandboxed eval command</text>
+<text x="628" y="82" fill="#3fb950" font-size="10" font-weight="600" text-anchor="end">✓ BUILT</text>
 <rect x="260" y="160" width="380" height="84" rx="10" fill="#161b22" stroke="#bc8cff" stroke-width="2"/>
 <text x="274" y="184" fill="#e6edf3" font-size="14" font-weight="600">2  Recorder core</text>
 <text x="274" y="204" fill="#8b949e" font-size="11.5">✓ secret redaction · fingerprints · error signatures</text>
 <text x="274" y="222" fill="#8b949e" font-size="11.5">✓ output cap + process-tree kill</text>
-<text x="274" y="240" fill="#8b949e" font-size="11.5">○ per-run budgets · policy checks</text>
+<text x="274" y="240" fill="#8b949e" font-size="11.5">✓ test integrity hashing · per-run budgets</text>
 <rect x="260" y="260" width="380" height="84" rx="10" fill="#161b22" stroke="#d29922" stroke-width="2"/>
 <text x="274" y="284" fill="#e6edf3" font-size="14" font-weight="600">3  Analysis: detectors → signals → hints</text>
 <text x="274" y="304" fill="#8b949e" font-size="11.5">✓ repeat · error · no-progress · cycle</text>
@@ -39,16 +39,16 @@
 <rect x="260" y="360" width="380" height="84" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
 <text x="274" y="384" fill="#e6edf3" font-size="14" font-weight="600">4  Evidence layer</text>
 <text x="274" y="404" fill="#8b949e" font-size="11.5">✓ hash chain · signed manifest · verify</text>
-<text x="274" y="422" fill="#8b949e" font-size="11.5">○ Ed25519 receipt · JSON Schema · log spec</text>
+<text x="274" y="422" fill="#8b949e" font-size="11.5">✓ Ed25519 run receipts · bundles · log spec</text>
 <rect x="690" y="160" width="250" height="100" rx="10" fill="#161b22" stroke="#f85149" stroke-width="2"/>
 <text x="704" y="184" fill="#e6edf3" font-size="14" font-weight="600">Sandbox backends</text>
-<text x="704" y="204" fill="#8b949e" font-size="11.5">✓ local  ✓ Docker (no network,</text>
-<text x="704" y="222" fill="#8b949e" font-size="11.5">   read-only, non-root, limits)</text>
-<text x="704" y="240" fill="#8b949e" font-size="11.5">○ gVisor · bubblewrap · proxy</text>
+<text x="704" y="204" fill="#8b949e" font-size="11.5">✓ dev-local  ✓ Docker (read-only,</text>
+<text x="704" y="222" fill="#8b949e" font-size="11.5">   non-root, cap-drop, limits)</text>
+<text x="704" y="240" fill="#8b949e" font-size="11.5">✓ egress proxy  ○ gVisor · bubblewrap</text>
 <rect x="690" y="360" width="250" height="84" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
-<text x="704" y="384" fill="#e6edf3" font-size="14" font-weight="600">Signed log + manifest</text>
-<text x="704" y="404" fill="#8b949e" font-size="11.5">hash-chained .ndjson, HMAC-signed</text>
-<text x="704" y="422" fill="#8b949e" font-size="11.5">closing manifest next to it</text>
+<text x="704" y="384" fill="#e6edf3" font-size="14" font-weight="600">Signed evidence &amp; receipt</text>
+<text x="704" y="404" fill="#8b949e" font-size="11.5">hash-chained .ndjson + HMAC</text>
+<text x="704" y="422" fill="#8b949e" font-size="11.5">Ed25519 receipt + signed bundle</text>
 <rect x="690" y="462" width="250" height="84" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
 <text x="704" y="486" fill="#e6edf3" font-size="14" font-weight="600">Exporters &amp; verifier</text>
 <text x="704" y="506" fill="#8b949e" font-size="11.5">✓ report · list · verify · demo</text>

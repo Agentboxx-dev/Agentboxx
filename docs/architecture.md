@@ -34,13 +34,13 @@ Agentbox uses a two-tier cryptographic model for tamper evidence:
 
 | # | Component | Built | Planned |
 |---|---|---|---|
-| 1 | Task contract | none | goal, step / time / output limits, host-run success check, allowed commands |
-| 2 | Recorder core | redaction, fingerprints, error signatures, output cap, process-tree kill | per-run budgets, policy checks |
-| 3 | Analysis | repeat, error, no-progress and cycle detectors, hint feedback | drift detector, plugin interface, intervention ladder |
-| 4 | Evidence layer | hash chain, HMAC signatures, signed closing manifest, `verify`, JSON Schema, `docs/log-format.md`, standalone verifier | Ed25519 run receipt |
-| 5 | Sandbox backends | local, Docker, resource and crash events (Docker) | gVisor, bubblewrap, egress proxy |
-| 6 | Exporters and verifier | `report`, `list`, `verify`, `demo` | JSON, HTML replay, OpenTelemetry |
-| 7 | Adapters | scripted model, Anthropic adapter (unvalidated) | other providers, `agentbox run -- <command>` |
+| 1 | Task contract | step / duration / deadline budgets, safe file assertions, sandboxed eval commands, test integrity hashing | policy DSL, dynamic capabilities |
+| 2 | Recorder core | redaction, fingerprints, error signatures, output cap, process-tree kill, per-run budgets | drift detector, intervention ladder |
+| 3 | Analysis | repeat, error, no-progress and cycle detectors, hint feedback | advanced anomaly detection, plugin interface |
+| 4 | Evidence layer | hash chain, HMAC signatures, signed closing manifest, Ed25519 run receipts, evidence bundles (`agentbox bundle`), JSON Schema, `verify` | remote transparency log integration |
+| 5 | Sandbox backends | local (dev-only), Docker (no network / egress proxy, read-only rootfs, non-root user, limits, ephemeral eval) | gVisor, bubblewrap |
+| 6 | Exporters and verifier | `report`, `list`, `verify`, `demo`, `bundle`, standalone verifier | JSON export, HTML replay, OpenTelemetry |
+| 7 | Adapters | scripted model, Anthropic adapter (unvalidated) | OpenAI, local LLMs, `agentbox run -- <command>` |
 
 ## Plugin interfaces (planned)
 
@@ -87,9 +87,9 @@ Files move in one mechanical change after the interfaces exist, so open pull req
 | Version | Goal | Done when |
 |---|---|---|
 | v0.2 | Safe to run | Output cap and tree kill, resource and crash events (done) |
-| v0.3 | Proven and verifiable | Three live-model sessions published, Ed25519 receipts, log spec and schema |
-| v0.4 | Extensible | Plugin interfaces, JSON and HTML export, OpenTelemetry, task contract |
-| v0.5 | Stronger isolation | gVisor or bubblewrap backend, network egress proxy |
+| v0.3 | Proven and verifiable | Ed25519 receipts, offline bundles, task contracts, egress proxy, safe assertions (done) |
+| v0.4 | Extensible | Plugin interfaces, JSON and HTML export, OpenTelemetry |
+| v0.5 | Stronger isolation | gVisor or bubblewrap backend |
 | v1.0 | Stable | Frozen schema, outside review of the threat model, benchmark over 50+ recorded runs |
 
 ## Out of scope
