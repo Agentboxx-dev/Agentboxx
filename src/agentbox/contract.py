@@ -3,17 +3,135 @@
 Enforces execution budgets (max_steps, max_duration_s, deadline_s) and verifies
 host-side assertions (file_exists, regex_match, file_hash, host_command)
 so that task success is objectively verified by the trusted host.
+
+Security: File assertions use _safe_resolve() and _safe_read() to reject
+symlinks, FIFOs, path traversal, and oversized files — untrusted agent
+output cannot escape the workspace or exhaust host resources.
 """
 from __future__ import annotations
 
+import errno
 import hashlib
+import os
 import re
+import stat
 import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .executor import _find_bash
+
+# Maximum file size that file assertions will read (defense against host OOM).
+MAX_ASSERT_FILE_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+_O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+class UnsafePath(ValueError):
+    """Raised when a file assertion target fails a security check."""
+
+
+def _safe_resolve(workspace: Path, target: str) -> Path:
+    """Resolve *target* relative to *workspace* without following symlinks.
+
+    Rejects absolute paths, literal ``..`` traversal, and symlinked
+    intermediate directories that escape the workspace.
+    """
+    # Catch absolute paths across POSIX and Windows (including drive letters and root-relative /paths)
+    if Path(target).is_absolute() or target.startswith(("/", "\\")) or (len(target) > 1 and target[1] == ":"):
+        raise UnsafePath(f"absolute paths are forbidden in assertions: {target}")
+
+    ws = workspace.resolve()
+    normed = Path(os.path.normpath(ws / target))
+
+    # 1. Literal path must stay inside the workspace.
+    if not normed.is_relative_to(ws):
+        raise UnsafePath(f"path escapes workspace: {target}")
+
+    # 2. Resolved path (follows symlinks in intermediate dirs) must too.
+    resolved = normed.resolve()
+    if not resolved.is_relative_to(ws):
+        raise UnsafePath(f"path escapes workspace via symlink: {target}")
+
+    return normed
+
+
+def _safe_read(path: Path, max_bytes: int | None = None) -> bytes:
+    """Read a regular file, rejecting symlinks, FIFOs, and oversized files.
+
+    Defence-in-depth layers:
+      1. ``lstat()`` — pre-check without following symlinks.
+      2. ``os.open(O_NOFOLLOW)`` — kernel refuses to open a final symlink.
+      3. ``os.fstat()`` on the fd — catches TOCTOU swaps between 1 and 2.
+    """
+    if max_bytes is None:
+        max_bytes = MAX_ASSERT_FILE_BYTES
+
+    # ---- 1. lstat pre-check ----
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        raise
+    except OSError as e:
+        raise UnsafePath(f"cannot stat: {path.name}: {e}")
+
+    if stat.S_ISLNK(st.st_mode):
+        raise UnsafePath(f"rejecting symlink: {path.name}")
+    if stat.S_ISFIFO(st.st_mode):
+        raise UnsafePath(f"rejecting FIFO / named pipe: {path.name}")
+    if not stat.S_ISREG(st.st_mode):
+        raise UnsafePath(f"not a regular file: {path.name}")
+    if st.st_size > max_bytes:
+        raise UnsafePath(
+            f"file too large: {path.name} ({st.st_size:,} bytes, cap {max_bytes:,})"
+        )
+
+    # ---- 2. Open with O_NOFOLLOW ----
+    flags = os.O_RDONLY | _O_NOFOLLOW
+    try:
+        fd = os.open(str(path), flags)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise UnsafePath(f"rejecting symlink: {path.name}")
+        raise UnsafePath(f"cannot open: {path.name}: {e}")
+
+    try:
+        # ---- 3. fstat on fd (TOCTOU mitigation) ----
+        st2 = os.fstat(fd)
+        if not stat.S_ISREG(st2.st_mode):
+            raise UnsafePath(f"not a regular file after open: {path.name}")
+        if st2.st_size > max_bytes:
+            raise UnsafePath(f"file too large after open: {path.name}")
+
+        data = os.read(fd, max_bytes + 1)
+        if len(data) > max_bytes:
+            raise UnsafePath(f"file exceeded read cap: {path.name}")
+        return data
+    finally:
+        os.close(fd)
+
+
+def _safe_lstat(path: Path) -> os.stat_result:
+    """``lstat()`` that rejects symlinks, FIFOs, and device nodes.
+
+    For ``file_exists``: allows regular files and directories only.
+    """
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        raise
+    except OSError as e:
+        raise UnsafePath(f"cannot stat: {path.name}: {e}")
+
+    if stat.S_ISLNK(st.st_mode):
+        raise UnsafePath(f"rejecting symlink: {path.name}")
+    if stat.S_ISFIFO(st.st_mode):
+        raise UnsafePath(f"rejecting FIFO / named pipe: {path.name}")
+    if not (stat.S_ISREG(st.st_mode) or stat.S_ISDIR(st.st_mode)):
+        raise UnsafePath(f"not a regular file or directory: {path.name}")
+
+    return st
 
 
 @dataclass
@@ -30,7 +148,7 @@ class AssertionResult:
 @dataclass
 class Assertion:
     kind: str  # "file_exists", "regex_match", "file_hash", "command"
-    target: str  # workspace-relative (or absolute) file path or shell command
+    target: str  # workspace-relative file path or shell command
     pattern: Optional[str] = None  # for regex_match
     expected_hash: Optional[str] = None  # for file_hash (sha256 hex)
     expected_exit_code: int = 0  # for command
@@ -54,36 +172,61 @@ class Assertion:
         ws = Path(workspace)
         name = self.get_name()
 
+        # ── file_exists ──────────────────────────────────────────
         if self.kind == "file_exists":
-            p = ws / self.target if not Path(self.target).is_absolute() else Path(self.target)
-            if p.exists():
-                return AssertionResult(name=name, kind=self.kind, passed=True, details=f"Path exists: {self.target}")
-            return AssertionResult(name=name, kind=self.kind, passed=False, details=f"Path does not exist: {self.target}")
+            try:
+                p = _safe_resolve(ws, self.target)
+            except UnsafePath as e:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"SECURITY: {e}")
+            try:
+                _safe_lstat(p)
+            except FileNotFoundError:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"Path does not exist: {self.target}")
+            except UnsafePath as e:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"SECURITY: {e}")
+            return AssertionResult(name=name, kind=self.kind, passed=True,
+                                  details=f"Path exists: {self.target}")
 
+        # ── regex_match ──────────────────────────────────────────
         if self.kind == "regex_match":
-            p = ws / self.target if not Path(self.target).is_absolute() else Path(self.target)
-            if not p.exists():
-                return AssertionResult(name=name, kind=self.kind, passed=False, details=f"File not found: {self.target}")
             try:
-                content = p.read_text(encoding="utf-8", errors="replace")
-            except OSError as e:
-                return AssertionResult(name=name, kind=self.kind, passed=False, details=f"Cannot read file {self.target}: {e}")
+                p = _safe_resolve(ws, self.target)
+                data = _safe_read(p)
+            except UnsafePath as e:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"SECURITY: {e}")
+            except FileNotFoundError:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"File not found: {self.target}")
+            content = data.decode("utf-8", errors="replace")
             if self.pattern and re.search(self.pattern, content):
-                return AssertionResult(name=name, kind=self.kind, passed=True, details=f"Pattern matched in {self.target}")
-            return AssertionResult(name=name, kind=self.kind, passed=False, details=f"Pattern not found in {self.target}")
+                return AssertionResult(name=name, kind=self.kind, passed=True,
+                                      details=f"Pattern matched in {self.target}")
+            return AssertionResult(name=name, kind=self.kind, passed=False,
+                                  details=f"Pattern not found in {self.target}")
 
+        # ── file_hash ────────────────────────────────────────────
         if self.kind == "file_hash":
-            p = ws / self.target if not Path(self.target).is_absolute() else Path(self.target)
-            if not p.exists():
-                return AssertionResult(name=name, kind=self.kind, passed=False, details=f"File not found: {self.target}")
             try:
-                h = hashlib.sha256(p.read_bytes()).hexdigest()
-            except OSError as e:
-                return AssertionResult(name=name, kind=self.kind, passed=False, details=f"Cannot read file {self.target}: {e}")
+                p = _safe_resolve(ws, self.target)
+                data = _safe_read(p)
+            except UnsafePath as e:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"SECURITY: {e}")
+            except FileNotFoundError:
+                return AssertionResult(name=name, kind=self.kind, passed=False,
+                                      details=f"File not found: {self.target}")
+            h = hashlib.sha256(data).hexdigest()
             if h.lower() == (self.expected_hash or "").lower():
-                return AssertionResult(name=name, kind=self.kind, passed=True, details=f"Hash matches sha256:{h}")
-            return AssertionResult(name=name, kind=self.kind, passed=False, details=f"Hash mismatch: expected {self.expected_hash}, got {h}")
+                return AssertionResult(name=name, kind=self.kind, passed=True,
+                                      details=f"Hash matches sha256:{h}")
+            return AssertionResult(name=name, kind=self.kind, passed=False,
+                                  details=f"Hash mismatch: expected {self.expected_hash}, got {h}")
 
+        # ── command (unchanged — Issue #54 scope) ────────────────
         if self.kind == "command":
             try:
                 proc = subprocess.run(
@@ -114,7 +257,8 @@ class Assertion:
                     details=f"Execution error: {e}"
                 )
 
-        return AssertionResult(name=name, kind=self.kind, passed=False, details=f"Unknown assertion kind: {self.kind}")
+        return AssertionResult(name=name, kind=self.kind, passed=False,
+                              details=f"Unknown assertion kind: {self.kind}")
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {
@@ -148,7 +292,7 @@ def assert_file_hash(path: str, expected_sha256: str, name: Optional[str] = None
 
 
 def assert_command(cmd: str, expected_exit_code: int = 0, timeout_s: float = 30.0, name: Optional[str] = None) -> Assertion:
-    """Create an assertion that a host shell command runs to completion in workspace with expected exit code."""
+    """Create an assertion that a host shell command runs to completion with the expected exit code."""
     return Assertion(kind="command", target=cmd, expected_exit_code=expected_exit_code, timeout_s=timeout_s, name=name)
 
 
