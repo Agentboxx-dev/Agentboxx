@@ -10,11 +10,14 @@ from .contract import (
     assert_file_hash,
 )
 from .recorder import Recorder
+from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, verify_file, verify_log
 
 __all__ = [
     "EgressPolicy",
     "Recorder",
+    "SemanticDriftConfig",
+    "SemanticDriftDetector",
     "ChainWriter",
     "load_or_create_key",
     "verify_file",

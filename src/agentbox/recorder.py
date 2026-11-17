@@ -2,11 +2,13 @@
 import hashlib
 import time
 from pathlib import Path
+from typing import Callable
 
 from .contract import ContractVerdict, TaskContract
 from .executor import error_signature, fingerprint, run_command
 from .loop_detector import LoopConfig, LoopDetector
 from .redact import merge_counts, redact, redact_all, redact_value
+from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, load_ed25519_private_key
 from .toolcall import MAX_PAYLOAD_BYTES, as_text, cap_payload, serialize, to_jsonable
 from .workspace import workspace_hash
@@ -50,6 +52,9 @@ class Recorder:
         agent_id: str | None = None,
         ed25519_key_path=None,
         contract: TaskContract | dict | None = None,
+        goal: str | None = None,
+        semantic_cfg: SemanticDriftConfig | None = None,
+        embed_fn: Callable[[str], list[float]] | None = None,
     ):
         self.session_id, self.workspace, self.sandbox = (
             session_id,
@@ -78,6 +83,16 @@ class Recorder:
         else:
             self.contract = None
 
+        if goal is None and self.contract and getattr(self.contract, "description", None):
+            goal = self.contract.description
+
+        self.goal = goal
+        self.semantic_detector = SemanticDriftDetector(
+            goal=self.goal,
+            cfg=semantic_cfg,
+            embed_fn=embed_fn,
+        )
+
         self.contract_verdict: ContractVerdict | None = None
         self.start_wall_clock = time.monotonic()
         self.cumulative_duration_ms = 0
@@ -94,6 +109,12 @@ class Recorder:
             start["contract"] = self.contract.to_dict()
 
         self.writer.append("session.start", start)
+
+    def set_goal(self, goal: str | None) -> None:
+        """Set or update the goal for semantic drift detection."""
+        self.goal = goal
+        if self.semantic_detector:
+            self.semantic_detector.set_goal(goal)
 
     def record_step(
         self,
@@ -167,7 +188,9 @@ class Recorder:
         self.writer.append("step", step)
 
         self.cumulative_duration_ms += duration_ms
-        signals = self.detector.observe(step)
+        signals = list(self.detector.observe(step))
+        if self.semantic_detector and thought:
+            signals.extend(self.semantic_detector.observe(thought, self.step_index))
 
         for signal in signals:
             self.writer.append(
@@ -288,7 +311,9 @@ class Recorder:
         self.writer.append("tool.call", call)
 
         self.cumulative_duration_ms += duration_ms
-        signals = self.detector.observe(observed)
+        signals = list(self.detector.observe(observed))
+        if self.semantic_detector and thought:
+            signals.extend(self.semantic_detector.observe(thought, self.step_index))
 
         for signal in signals:
             self.writer.append(
@@ -395,7 +420,9 @@ class Recorder:
                 )
 
         self.cumulative_duration_ms += obs.get("duration_ms", 0)
-        signals = self.detector.observe(step)
+        signals = list(self.detector.observe(step))
+        if self.semantic_detector and thought:
+            signals.extend(self.semantic_detector.observe(thought, self.step_index))
 
         for signal in signals:
             self.writer.append(

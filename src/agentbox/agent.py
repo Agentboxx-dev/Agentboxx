@@ -31,8 +31,8 @@ class ScriptedModel:
     def __init__(self, python_cmd: str | None = None):
         self.python_cmd = python_cmd or _get_platform_py()
         self.plan = [
-            ("Create a small script.", "printf 'x = 0\\nprint(10 / x)\\n' > main.py"),
-            ("Run it.", f"{self.python_cmd} main.py"),
+            ("Create main.py to solve the task.", "printf 'x = 0\\nprint(10 / x)\\n' > main.py"),
+            ("Run main.py to check for errors.", f"{self.python_cmd} main.py"),
         ]
         self.recovery = [
             ("The hint is right: x = 0 causes the crash. Fix the value.", "sed -i 's/x = 0/x = 2/' main.py"),
@@ -156,6 +156,8 @@ def _format_observation(obs: dict) -> str:
 
 
 def run_agent(goal, model, recorder, max_steps=15, verbose=True) -> dict:
+    if hasattr(recorder, "set_goal"):
+        recorder.set_goal(goal)
     messages = [{"role": "user", "content": f"Goal: {goal}"}]
     reason, final = "max_steps", None
     for _ in range(max_steps):
