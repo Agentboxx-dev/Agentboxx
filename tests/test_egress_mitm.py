@@ -6,7 +6,6 @@ integration is tested without network traffic.
 
 from __future__ import annotations
 
-import pytest
 from cryptography import x509
 
 from agentbox.egress_ca import EphemeralCA

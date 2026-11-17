@@ -15,6 +15,7 @@ is valid for only 24 hours.
 from __future__ import annotations
 
 import datetime
+from datetime import timezone
 import ipaddress
 import threading
 from typing import Tuple
@@ -33,7 +34,7 @@ class EphemeralCA:
         self._ca_key = rsa.generate_private_key(
             public_exponent=65537, key_size=2048,
         )
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(timezone.utc)
         name = x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, "Agentboxx Ephemeral CA"),
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentboxx"),
@@ -76,7 +77,7 @@ class EphemeralCA:
         host_key = rsa.generate_private_key(
             public_exponent=65537, key_size=2048,
         )
-        now = datetime.datetime.now(datetime.UTC)
+        now = datetime.datetime.now(timezone.utc)
         san_names: list[x509.GeneralName] = [x509.DNSName(hostname)]
         try:
             san_names.append(x509.IPAddress(ipaddress.ip_address(hostname)))
