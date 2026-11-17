@@ -329,7 +329,7 @@ The log format is documented in [docs/log-format.md](docs/log-format.md) and des
 - [x] Network egress filtering proxy & connection audit events ([#24](https://github.com/Agentboxx-dev/Agentboxx/issues/24))
 - [x] Session replay UI ([#29](https://github.com/Agentboxx-dev/Agentboxx/issues/29))
 - [x] First-class MCP tool-call recording ([#50](https://github.com/Agentboxx-dev/Agentboxx/issues/50))
-- [ ] Semantic drift detector
+- [x] Semantic drift detector ([#30](https://github.com/Agentboxx-dev/Agentboxx/issues/30))
 - [ ] Threshold calibration on recorded sessions
 
 ## Live Model Execution & Task Contracts

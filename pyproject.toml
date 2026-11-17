@@ -40,6 +40,7 @@ Documentation = "https://github.com/Agentboxx-dev/Agentboxx/tree/main/docs"
 dev = ["pytest", "pytest-cov", "ruff", "jsonschema", "rich>=13.0"]
 ui = ["rich>=13.0"]
 langchain = ["langchain-core>=0.1.0"]
+embeddings = ["fastembed>=0.2.0"]
 
 [project.scripts]
 agentbox = "agentbox.cli:main"
