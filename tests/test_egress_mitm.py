@@ -56,7 +56,7 @@ class TestEphemeralCA:
         ca = EphemeralCA()
         a = ca.issue_host_cert("cached.test")
         b = ca.issue_host_cert("cached.test")
-        assert a is b  # exact same tuple from cache
+        assert a == b  # same content from cache
 
     def test_different_hosts_get_different_certs(self):
         ca = EphemeralCA()

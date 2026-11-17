@@ -33,7 +33,7 @@ class EphemeralCA:
         self._ca_key = rsa.generate_private_key(
             public_exponent=65537, key_size=2048,
         )
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         name = x509.Name([
             x509.NameAttribute(NameOID.COMMON_NAME, "Agentboxx Ephemeral CA"),
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Agentboxx"),
@@ -76,7 +76,7 @@ class EphemeralCA:
         host_key = rsa.generate_private_key(
             public_exponent=65537, key_size=2048,
         )
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         san_names: list[x509.GeneralName] = [x509.DNSName(hostname)]
         try:
             san_names.append(x509.IPAddress(ipaddress.ip_address(hostname)))
