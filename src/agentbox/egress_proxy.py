@@ -4,12 +4,16 @@ Runs on the host as a daemon thread. Docker containers route traffic through
 it via HTTP_PROXY / HTTPS_PROXY environment variables. Domain filtering on
 HTTPS inspects the CONNECT hostname (SNI) without TLS interception.
 
+When ``EgressPolicy(inspect_tls=True)`` is set, the proxy performs full TLS
+termination via :mod:`egress_mitm`, enabling inspection and redaction of
+HTTPS request bodies before they leave the host.
+
 Limitations
 -----------
 - Soft enforcement. Programs that ignore proxy env-vars can bypass the filter.
   For hard enforcement use ``--network none`` (fully offline).
-- HTTPS filtering sees only the hostname from the CONNECT request, not the
-  full URL or request body (no TLS interception / MITM).
+- Without ``inspect_tls``, HTTPS filtering sees only the hostname from the
+  CONNECT request, not the full URL or request body.
 """
 
 import http.server
@@ -22,6 +26,9 @@ import time
 import urllib.parse
 import urllib.request
 from ipaddress import ip_address, ip_network
+
+from .egress_ca import EphemeralCA
+from .egress_mitm import mitm_intercept
 
 # Private / reserved networks blocked by default
 _BLOCKED_NETWORKS = [
@@ -50,10 +57,12 @@ class EgressPolicy:
         self,
         allowed_domains: list[str] | None = None,
         block_private: bool = True,
+        inspect_tls: bool = False,
     ):
         self.allowed_domains: set[str] = set()
         self.wildcard_suffixes: list[str] = []
         self.block_private = block_private
+        self.inspect_tls = inspect_tls
         for d in (allowed_domains or []):
             d = d.lower().strip()
             if d.startswith("*."):
@@ -90,12 +99,14 @@ class EgressPolicy:
         return {
             "allowed_domains": domains,
             "block_private": self.block_private,
+            "inspect_tls": self.inspect_tls,
         }
 
 
 class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     policy: EgressPolicy
     event_queue: "queue.Queue[dict]"
+    ca: "EphemeralCA | None"
 
     def log_message(self, fmt, *args):  # silence stderr
         pass
@@ -120,6 +131,17 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         if not allowed:
             self.send_error(403, f"Blocked: {reason}")
             return
+
+        # TLS inspection path: terminate TLS, inspect, redact, forward.
+        if self.policy.inspect_tls and self.ca is not None:
+            self.send_response(200, "Connection Established")
+            self.end_headers()
+            mitm_intercept(
+                self.connection, host, port, self.ca, self.event_queue,
+            )
+            return
+
+        # Default path: transparent TCP tunnel (no body inspection).
         try:
             upstream = socket.create_connection((host, port), timeout=30)
         except OSError as exc:
@@ -195,12 +217,27 @@ class EgressProxy:
         self.port = port
         self.events: queue.Queue[dict] = queue.Queue()
         self._server: socketserver.ThreadingTCPServer | None = None
+        self._ca: EphemeralCA | None = None
+        if policy.inspect_tls:
+            self._ca = EphemeralCA()
+
+    @property
+    def ca_cert_pem(self) -> bytes | None:
+        """PEM-encoded CA cert to mount in the container's trust store.
+
+        Returns ``None`` when ``inspect_tls`` is disabled.
+        """
+        return self._ca.ca_cert_pem if self._ca else None
 
     def start(self):
         cls = type(
             "H",
             (_ProxyHandler,),
-            {"policy": self.policy, "event_queue": self.events},
+            {
+                "policy": self.policy,
+                "event_queue": self.events,
+                "ca": self._ca,
+            },
         )
         self._server = socketserver.ThreadingTCPServer(
             (self.bind, self.port), cls

@@ -74,9 +74,11 @@ def main():
         p.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
         return p
 
-    rec = json.loads(lines[1]); rec["event"]["data"]["exit_code"] = 1
+    rec = json.loads(lines[1])
+    rec["event"]["data"]["exit_code"] = 1
     mod = variant("modified", [lines[0], json.dumps(rec, ensure_ascii=False), lines[2]])
-    rec = json.loads(lines[1]); rec["hash"] = "f" * 64
+    rec = json.loads(lines[1])
+    rec["hash"] = "f" * 64
     alt = variant("althash", [lines[0], json.dumps(rec, ensure_ascii=False), lines[2]])
     for n, p in (("modified record", mod), ("altered hash", alt)):
         expect(f"python {n}", run([sys.executable, str(PY_VERIFIER), str(p), "--key-file", str(keyfile)]), 1)
