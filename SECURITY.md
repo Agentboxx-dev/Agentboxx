@@ -29,7 +29,7 @@ Submit an advisory report through GitHub:
 
 ### Alternative: Security Contact
 If you cannot use GitHub Security Advisories, contact the maintainers directly at:
-- **Email:** `security@agentboxx.dev` (or via GitHub: [@Prathmesh010190](https://github.com/Prathmesh010190))
+- **Email:** `prathmeshkokate775@gmail.com` (or via GitHub: [@Prathmesh010190](https://github.com/Prathmesh010190))
 
 ### Response Time & SLA
 - **Initial acknowledgment:** Within 48 hours.
