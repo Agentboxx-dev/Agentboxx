@@ -52,6 +52,8 @@ Most agent tooling records what the agent *says* it did, from inside the agent's
 
 ## Quick start
 
+> **Note**: Install: `pip install agentboxx`. CLI and import name: `agentbox`.
+
 Requires Python 3.10+. Docker is optional and used by the sandbox demos.
 
 ~~~bash
