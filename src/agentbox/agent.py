@@ -8,6 +8,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from typing import Any
 
 
 def _get_platform_py() -> str:
@@ -155,7 +156,28 @@ def _format_observation(obs: dict) -> str:
     )
 
 
-def run_agent(goal, model, recorder, max_steps=15, verbose=True) -> dict:
+def run_agent(
+    goal: str,
+    model: Any,
+    recorder: Any,
+    max_steps: int = 15,
+    verbose: bool = True,
+) -> dict[str, Any]:
+    """Run a ReAct-style agent loop wired to a recorder.
+
+    The model proposes actions/commands, the recorder executes and logs them,
+    and observations (including any loop detection hints) feed back into the model.
+
+    Args:
+        goal: The natural language objective for the agent.
+        model: A model interface implementing ``next_action(messages)``.
+        recorder: An initialized ``Recorder`` instance.
+        max_steps: Maximum number of execution steps before stopping.
+        verbose: Whether to print step and signal info to stdout.
+
+    Returns:
+        dict: Summary containing ``reason`` and optional ``final`` response.
+    """
     if hasattr(recorder, "set_goal"):
         recorder.set_goal(goal)
     messages = [{"role": "user", "content": f"Goal: {goal}"}]

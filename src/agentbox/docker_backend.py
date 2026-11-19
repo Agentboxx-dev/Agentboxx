@@ -9,6 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
+from typing import Any
 
 from .executor import build_observation
 from .sandbox_stats import EventCounter, parse_state, parse_stats
@@ -43,8 +44,38 @@ def docker_available() -> bool:
 
 
 class DockerSandbox:
-    def __init__(self, workspace="./workspace-docker", image=DEFAULT_IMAGE,
-                 network="none", memory="512m", cpus="1", pids=128, resource_stats=True, user=None, egress_policy=None):
+    """Hardened Docker container sandbox.
+
+    Commands run as a non-root user in a container with disabled network,
+    read-only root filesystem, dropped Linux capabilities, and resource limits.
+    The signing key and log files remain strictly on the host.
+    """
+
+    def __init__(
+        self,
+        workspace: str = "./workspace-docker",
+        image: str = DEFAULT_IMAGE,
+        network: str = "none",
+        memory: str = "512m",
+        cpus: str = "1",
+        pids: int = 128,
+        resource_stats: bool = True,
+        user: str | None = None,
+        egress_policy: Any = None,
+    ) -> None:
+        """Initialize the Docker sandbox configuration.
+
+        Args:
+            workspace: Host workspace directory mounted to /workspace inside container.
+            image: Docker container base image.
+            network: Docker network mode ('none', 'bridge', etc.).
+            memory: Memory limit constraint (e.g. '512m').
+            cpus: CPU quota allocation.
+            pids: Maximum PID count limit.
+            resource_stats: Whether to collect per-step resource consumption stats.
+            user: Container execution user in 'uid:gid' format.
+            egress_policy: Optional EgressPolicy for outbound connection filtering.
+        """
         self.workspace = os.path.abspath(workspace)
         self.image, self.network = image, network
         self.memory, self.cpus, self.pids = memory, cpus, pids
@@ -57,7 +88,8 @@ class DockerSandbox:
         self.egress_policy = egress_policy
         self._egress_proxy = None
 
-    def describe(self) -> dict:
+    def describe(self) -> dict[str, Any]:
+        """Return a dict describing the sandbox configuration and isolation parameters."""
         desc = {"backend": "docker", "image": self.image, "network": self.network,
                 "memory": self.memory, "cpus": self.cpus, "pids_limit": self.pids,
                 "read_only_rootfs": True, "cap_drop": "ALL", "resource_stats": self.resource_stats, "user": self.user}
@@ -65,7 +97,12 @@ class DockerSandbox:
             desc["egress"] = self.egress_policy.to_dict()
         return desc
 
-    def start(self):
+    def start(self) -> None:
+        """Start the Docker container and background event watcher.
+
+        Raises:
+            DockerNotAvailable: If Docker is not installed or the daemon is unavailable.
+        """
         if not docker_available():
             raise DockerNotAvailable("Docker is not running or not installed.")
         os.makedirs(self.workspace, exist_ok=True)
@@ -111,7 +148,8 @@ class DockerSandbox:
         self.started = True
         self._start_event_watcher()
 
-    def stop(self):
+    def stop(self) -> None:
+        """Stop and remove the running container and egress proxy."""
         if self.started:
             self._stop_event_watcher()
             subprocess.run(["docker", "rm", "-f", self.name], capture_output=True)
@@ -175,8 +213,22 @@ class DockerSandbox:
         except (OSError, subprocess.TimeoutExpired):
             pass
 
-    def run(self, cmd: str, timeout_s: int = 60,
-            max_output_bytes: int = DEFAULT_MAX_STREAM_BYTES) -> dict:
+    def run(
+        self,
+        cmd: str,
+        timeout_s: int = 60,
+        max_output_bytes: int = DEFAULT_MAX_STREAM_BYTES,
+    ) -> dict[str, Any]:
+        """Execute a shell command inside the container and return the observation dict.
+
+        Args:
+            cmd: Command string executed with bash inside container.
+            timeout_s: Execution timeout in seconds.
+            max_output_bytes: Maximum output bytes before stream truncation.
+
+        Returns:
+            dict[str, Any]: Observation dict containing stdout, stderr, exit code, and metrics.
+        """
         if not self.started:
             raise RuntimeError("Call start() before run().")
         argv = ["docker", "exec", "-w", "/workspace", self.name,

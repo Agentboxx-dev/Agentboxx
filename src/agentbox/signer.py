@@ -263,8 +263,16 @@ def write_receipt(
 
 # --- Verification ---
 
-def verify_file(path, key: bytes) -> list[str]:
-    """Return a list of problems. Empty list = log is intact."""
+def verify_file(path: str | Path, key: bytes) -> list[str]:
+    """Verify the HMAC hash chain of an event log file.
+
+    Args:
+        path: Path to the .ndjson log file.
+        key: 32-byte symmetric HMAC signing key.
+
+    Returns:
+        list[str]: List of human-readable problem descriptions. Empty list if log is intact.
+    """
     problems, prev, expected = [], GENESIS, 1
     with open(path, encoding="utf-8") as f:
         for n, line in enumerate(f, 1):
@@ -373,8 +381,16 @@ def verify_receipt(log_path, receipt_file, pubkey) -> tuple[list[str], dict | No
     return problems, payload
 
 
-def verify_log(path, key: bytes):
-    """Full check using symmetric HMAC key. Returns (problems, incomplete)."""
+def verify_log(path: str | Path, key: bytes) -> tuple[list[str], list[str]]:
+    """Full check of an event log and its signed manifest using the symmetric HMAC key.
+
+    Args:
+        path: Path to the .ndjson log file.
+        key: 32-byte symmetric HMAC signing key.
+
+    Returns:
+        tuple[list[str], list[str]]: (problems, incomplete) lists of issue strings.
+    """
     problems = verify_file(path, key)
     last = {}
     with open(path, encoding="utf-8") as f:
