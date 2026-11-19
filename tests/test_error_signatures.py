@@ -265,3 +265,40 @@ def test_generic_fallback_for_unrecognized_output():
     sig, cls = error_signature(unrelated, 7)
     assert sig is not None
     assert cls is None  # no recognized class, hashed last lines
+
+
+# --- Windows (CRLF) output -------------------------------------------------
+
+def _crlf(text: str) -> str:
+    return text.replace("\n", "\r\n")
+
+
+PYTHON_TB = (
+    "Traceback (most recent call last):\n"
+    '  File "main.py", line 1, in <module>\n'
+    "    print(1/0)\n"
+    "ZeroDivisionError: division by zero\n"
+)
+
+
+def test_python_traceback_same_signature_with_crlf():
+    lf = error_signature(PYTHON_TB, 1)
+    crlf = error_signature(_crlf(PYTHON_TB), 1)
+    assert lf[1] == "ZeroDivisionError"
+    assert crlf == lf
+
+
+def test_every_language_same_signature_with_crlf():
+    fixtures = {
+        name: value
+        for name, value in globals().items()
+        if name.isupper() and isinstance(value, str) and "\n" in value
+    }
+    assert {"NODE_A", "GO_PANIC_1", "RUST_PANIC_NEW", "JAVA_EX_2", "RUBY_1", "PYTHON_TB"} <= set(fixtures)
+    for name, text in fixtures.items():
+        for code in (1, 2, 101):
+            assert error_signature(_crlf(text), code) == error_signature(text, code), name
+
+
+def test_crlf_does_not_make_different_errors_equal():
+    assert error_signature(_crlf(RUBY_1), 1)[0] != error_signature(_crlf(RUBY_DIFF), 1)[0]

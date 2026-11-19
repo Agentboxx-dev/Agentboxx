@@ -41,6 +41,9 @@ def fingerprint(text: str) -> str:
 def error_signature(stderr: str, exit_code: int):
     if exit_code == 0 or not stderr.strip():
         return None, None
+    # Windows output has \r\n line endings. The extractors anchor on line ends ($), which do not
+    # match before \r, so normalize first: the same error then has the same signature on every OS.
+    stderr = stderr.replace("\r\n", "\n")
     if "Traceback (most recent call last)" not in stderr:
         found = (
             extract_go(stderr)
