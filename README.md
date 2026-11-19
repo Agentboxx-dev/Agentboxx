@@ -262,8 +262,10 @@ The header shows a dot per step (failed steps in red) and a badge: `VERIFIED ✓
 | `loop.error_repeat` | The same normalized error keeps recurring |
 | `loop.no_progress` | Several steps failed while no files changed |
 | `loop.cycle` | The agent alternates between the same few commands |
+| `semantic_loop` | The agent's thoughts are semantically repeating (circular reasoning) |
+| `goal_drift` | The agent's actions have diverged from the original goal |
 
-Warnings become hints for the model. Critical severity (for example five identical repeats) stops the run.
+Warnings become hints for the model. Critical severity (for example five identical repeats) stops the run. See [docs/detection.md](docs/detection.md) for complete details on thresholds, config, and example log records.
 
 ## Sandbox resource and crash events
 
@@ -401,6 +403,20 @@ agentbox verify ./runs/my-run.ndjson -k ./runs/key
 ## Contributing
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the issues labeled [`good first issue`](https://github.com/Agentboxx-dev/Agentboxx/labels/good%20first%20issue).
+
+## FAQ
+
+**Is this safe to run untrusted code in?**
+The Docker backend provides strong isolation: no network, read-only root filesystem, all Linux capabilities dropped, non-root user, and resource limits. The signing key never enters the container. That said, Docker is not an absolute hypervisor boundary. For multi-tenant or production use, run Docker inside a disposable VM. See the [Threat model](#threat-model) and [SECURITY.md](SECURITY.md) for the full picture.
+
+**Why not just use X?**
+agentboxx is not an agent framework or model SDK — it records what agents do from the outside, in a tamper-evident way. Most frameworks record what the agent reports; agentboxx records what actually happened (exit codes, stdout, timing) and signs it so the record cannot be edited afterward. Use it alongside any framework you already have.
+
+**Can I use this without Docker?**
+Yes. The local backend runs commands in your host shell. It is meant for development and testing with trusted code only; it provides no isolation boundary. See [Threat model](#threat-model).
+
+**What Python versions are supported?**
+Python 3.10 and later. Tested in CI on 3.10, 3.11, 3.12, 3.13 and 3.14.
 
 ## Used by / experiments
 
