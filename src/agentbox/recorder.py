@@ -2,6 +2,7 @@
 import hashlib
 import time
 from pathlib import Path
+from typing import Any
 
 from .contract import ContractVerdict, TaskContract
 from .executor import error_signature, fingerprint, run_command
@@ -38,19 +39,39 @@ def _make_stream_record(
 
 
 class Recorder:
+    """Host-side session recorder.
+
+    Every agent action passes through run() or record_step(); the results are
+    hash-chained and HMAC-signed with a key that never enters the sandbox.
+    """
+
     def __init__(
         self,
         session_id: str,
         workspace: str = "./workspace",
         log_dir: str = "./runs",
-        key_path=None,
+        key_path: str | Path | None = None,
         loop_cfg: LoopConfig | None = None,
-        sandbox=None,
+        sandbox: Any | None = None,
         overwrite: bool = False,
         agent_id: str | None = None,
-        ed25519_key_path=None,
+        ed25519_key_path: str | Path | None = None,
         contract: TaskContract | dict | None = None,
-    ):
+    ) -> None:
+        """Initialize a new recording session.
+
+        Args:
+            session_id: Unique identifier for this session.
+            workspace: Working directory mounted or inspected during runs.
+            log_dir: Destination directory for the signed log and manifest.
+            key_path: Optional path to symmetric HMAC signing key.
+            loop_cfg: Optional configuration thresholds for loop detection.
+            sandbox: Optional execution sandbox instance (e.g. DockerSandbox).
+            overwrite: Whether to overwrite existing log file of same name.
+            agent_id: Optional identifier tag for the executing agent.
+            ed25519_key_path: Optional path to Ed25519 private key for receipts.
+            contract: Optional TaskContract instance or dictionary defining constraints.
+        """
         self.session_id, self.workspace, self.sandbox = (
             session_id,
             workspace,
@@ -110,8 +131,26 @@ class Recorder:
         parent_step: int | None = None,
         usage: dict | None = None,
         workspace_hash_val: str | None = None,
-    ) -> dict:
-        """Record an already-executed action (e.g. from an agent framework callback)."""
+    ) -> dict[str, Any]:
+        """Record an already-executed action (e.g. from an agent framework callback).
+
+        Args:
+            command: Shell command string that was executed.
+            stdout: Standard output produced by the command.
+            stderr: Standard error produced by the command.
+            exit_code: Process exit code.
+            thought: Reasoning text or chain-of-thought preceding the action.
+            tool: Optional identifier for tool or framework invoking the command.
+            duration_ms: Execution duration in milliseconds.
+            timed_out: Whether command timed out during execution.
+            output_limit_exceeded: Whether output exceeded byte limits.
+            parent_step: Optional parent step index in hierarchical runs.
+            usage: Optional token or resource usage statistics dict.
+            workspace_hash_val: Precomputed workspace SHA-256 hash string.
+
+        Returns:
+            dict[str, Any]: Observation dict and any loop detection signals.
+        """
         self.step_index += 1
 
         command, stdout, stderr, redactions = redact_all(
@@ -184,15 +223,15 @@ class Recorder:
         *,
         tool_name: str,
         tool_source: str,
-        arguments=None,
-        result=None,
+        arguments: Any = None,
+        result: Any = None,
         duration_ms: int = 0,
         is_error: bool = False,
         thought: str = "",
         parent_step: int | None = None,
         usage: dict | None = None,
         workspace_hash_val: str | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Record an already-executed tool call (for example an MCP tool call).
 
         It is one step: it takes the next `step_index`, counts toward the
@@ -318,7 +357,20 @@ class Recorder:
         tool: str | None = None,
         parent_step: int | None = None,
         usage: dict | None = None,
-    ) -> dict:
+    ) -> dict[str, Any]:
+        """Run a command in the sandbox/workspace and record the step.
+
+        Args:
+            command: Shell command string to execute.
+            thought: Reasoning text or chain-of-thought preceding the action.
+            timeout_s: Process execution timeout in seconds.
+            tool: Optional tool name tag.
+            parent_step: Optional parent step index in hierarchical runs.
+            usage: Optional usage metric dictionary.
+
+        Returns:
+            dict[str, Any]: Contains 'observation', 'signals', and optional 'sandbox' metrics.
+        """
         self.step_index += 1
 
         if self.sandbox:
@@ -411,7 +463,12 @@ class Recorder:
             "sandbox": sbx,
         }
 
-    def close(self, reason: str = "done"):
+    def close(self, reason: str = "done") -> None:
+        """Close the recording session and write the signed manifest and receipt.
+
+        Args:
+            reason: Explanation of why the session finished.
+        """
         if self.closed:
             return
 
