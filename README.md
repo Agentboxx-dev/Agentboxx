@@ -31,6 +31,8 @@ Most agent tooling records what the agent *says* it did, from inside the agent's
 | **Hint feedback** | When the detector fires, a hint is added to the agent's next observation so it can change approach. |
 | **Hardened sandbox** | Docker backend with no network, read-only root filesystem, dropped capabilities, non-root user and resource limits. |
 
+Already using LangSmith, Langfuse or a cloud sandbox such as E2B? See [how agentbox compares and how they fit together](docs/comparisons.md).
+
 ## Architecture
 
 <p align="center">
