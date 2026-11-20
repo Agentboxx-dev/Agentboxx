@@ -95,6 +95,23 @@ If you find a way for sandboxed code to read, edit or delete the signing key or 
 - Tests and docs
 - Issues labeled [`good first issue`](https://github.com/Agentboxx-dev/Agentboxx/labels/good%20first%20issue)
 
+## GitHub Discussions
+
+Have a question, idea, or want to share something you built with Agentboxx? Visit [GitHub Discussions](https://github.com/Agentboxx-dev/Agentboxx/discussions).
+
+When enabling GitHub Discussions, the maintainer can paste the following welcome post:
+
+> **Welcome to Agentboxx Discussions!**
+>
+> This is a space for the community to ask questions, share experiments, and discuss ideas for tamper-evident agent execution.
+>
+> - **Questions & Ideas:** Feel free to share workflows, use cases, or ideas for new integrations.
+> - **Bug Reports & Issues:** For confirmed bugs or specific feature proposals, please open a GitHub Issue.
+> - **Security Disclosures:** For vulnerabilities or sandbox escapes, refer to [SECURITY.md](SECURITY.md).
+> - **Conduct:** All interactions are subject to our [Code of Conduct](CODE_OF_CONDUCT.md).
+>
+> To list your project in the "Used by / experiments" section of the README, feel free to open a PR!
+
 ## License and contributor agreement
 
 Agentboxx is released under Apache-2.0. See [LICENSE](LICENSE).

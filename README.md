@@ -400,6 +400,14 @@ agentbox verify ./runs/my-run.ndjson -k ./runs/key
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the issues labeled [`good first issue`](https://github.com/Agentboxx-dev/Agentboxx/labels/good%20first%20issue).
 
+## Used by / experiments
+
+If you use agentboxx in a project or experiment, open a pull request to add your entry here:
+
+| Project | Description | Author |
+|---|---|---|
+| *(add yours)* | *(one line summary)* | *(your GitHub handle)* |
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
