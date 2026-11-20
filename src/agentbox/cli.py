@@ -1,10 +1,13 @@
-"""Command-line interface: verify, report, replay, list, demo and keygen."""
+"""Command-line interface: verify, report, replay, list, demo, keygen, export, and compress."""
 import argparse
+import csv
+import gzip
 import json
 import os
 import shutil
 import sys
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -60,12 +63,48 @@ def _check_readable(path) -> None:
         raise CliError(f"log file is empty: {path}")
 
 
+def _open_log(path):
+    p = Path(path)
+    if str(p).endswith(".gz"):
+        return gzip.open(p, "rt", encoding="utf-8")
+    return open(p, "r", encoding="utf-8")
+
+
+@contextmanager
+def _resolve_log_for_verification(path):
+    p = Path(path)
+    if not str(p).endswith(".gz"):
+        yield p, None
+        return
+
+    with tempfile.TemporaryDirectory(prefix="agentbox-verify-gz-") as tmpdir:
+        tmp = Path(tmpdir)
+        decompressed_name = p.name[:-3]
+        dest = tmp / decompressed_name
+        with gzip.open(p, "rb") as f_in, open(dest, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+
+        base_stem = decompressed_name
+        if base_stem.endswith(".ndjson"):
+            base_stem = base_stem[:-7]
+        manifest_orig = p.parent / f"{base_stem}.manifest.json"
+        if manifest_orig.exists():
+            shutil.copy2(manifest_orig, tmp / f"{base_stem}.manifest.json")
+
+        receipt_orig = p.parent / f"{base_stem}.receipt.json"
+        if receipt_orig.exists():
+            shutil.copy2(receipt_orig, tmp / f"{base_stem}.receipt.json")
+
+        yield dest, tmp
+
+
 def _run_verify(path, key=None):
     """Return (problems, incomplete). Raises CliError for missing, empty or unreadable files."""
     _check_readable(path)                      # before the key lookup, so a typo creates no key
     key = key if key is not None else load_or_create_key()
     try:
-        return verify_log(path, key)
+        with _resolve_log_for_verification(path) as (target_path, _):
+            return verify_log(target_path, key)
     except (OSError, UnicodeDecodeError) as e:
         raise CliError(f"cannot read {path}: {getattr(e, 'strerror', None) or e}")
     except (KeyError, TypeError, AttributeError):
@@ -75,7 +114,7 @@ def _print_tool_call_summary(path) -> None:
     """After a log verified, say how many tool calls it holds (nothing if there are none)."""
     total = failed = 0
     try:
-        with open(path, encoding="utf-8") as f:
+        with _open_log(path) as f:
             for line in f:
                 try:
                     ev = json.loads(line)["event"]
@@ -161,25 +200,28 @@ def cmd_verify(args) -> int:
 
     # If --pubkey or --receipt is explicitly provided, verify using Ed25519 receipt
     if receipt_file or pubkey:
-        if not receipt_file:
-            receipt_file = receipt_path(args.logfile)
-        if not pubkey:
-            if DEFAULT_ED25519_PUB_PATH.exists():
-                pubkey = DEFAULT_ED25519_PUB_PATH
-            else:
-                raise CliError("receipt verification requires --pubkey <path_or_hex>")
+        with _resolve_log_for_verification(args.logfile) as (target_path, _):
+            rf = receipt_file
+            if not rf:
+                rf = receipt_path(target_path)
+            pk = pubkey
+            if not pk:
+                if DEFAULT_ED25519_PUB_PATH.exists():
+                    pk = DEFAULT_ED25519_PUB_PATH
+                else:
+                    raise CliError("receipt verification requires --pubkey <path_or_hex>")
 
-        problems, payload = verify_receipt(args.logfile, receipt_file, pubkey)
-        if problems:
-            print("RECEIPT VERIFICATION FAILED (tampered or corrupt):")
-            for p in problems:
-                print("  -", p)
-            return EXIT_TAMPERED
-        key_id = payload.get("key_id", "unknown") if payload else "unknown"
-        records = payload.get("record_count", 0) if payload else 0
-        print(f"OK: Ed25519 receipt verified ({records} records, key ID {key_id}). Log is intact.")
-        _print_tool_call_summary(args.logfile)
-        return EXIT_OK
+            problems, payload = verify_receipt(target_path, rf, pk)
+            if problems:
+                print("RECEIPT VERIFICATION FAILED (tampered or corrupt):")
+                for p in problems:
+                    print("  -", p)
+                return EXIT_TAMPERED
+            key_id = payload.get("key_id", "unknown") if payload else "unknown"
+            records = payload.get("record_count", 0) if payload else 0
+            print(f"OK: Ed25519 receipt verified ({records} records, key ID {key_id}). Log is intact.")
+            _print_tool_call_summary(args.logfile)
+            return EXIT_OK
 
     # Standard HMAC verification mode
     key = None
@@ -210,7 +252,7 @@ def _read_events(path) -> list:
     _check_readable(path)
     events = []
     try:
-        with open(path, encoding="utf-8") as f:
+        with _open_log(path) as f:
             for n, line in enumerate(f, 1):
                 if not line.strip():
                     continue
@@ -439,6 +481,94 @@ def cmd_bundle(args) -> int:
     return EXIT_OK
 
 
+def cmd_export(args) -> int:
+    """Export step records to CSV."""
+    _check_readable(args.logfile)
+    fmt = getattr(args, "format", "csv") or "csv"
+    if fmt != "csv":
+        raise CliError(f"unsupported export format: {fmt}")
+
+    steps = []
+    signals_by_step: dict[int, list[str]] = {}
+
+    with _open_log(args.logfile) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+                ev = rec.get("event", {})
+                etype = ev.get("event_type")
+                data = ev.get("data", {})
+                if etype == "step":
+                    steps.append(data)
+                elif etype == "analysis.signal":
+                    s_idx = data.get("step_index")
+                    kind = data.get("kind", "")
+                    severity = data.get("severity", "")
+                    if s_idx is not None and kind:
+                        signals_by_step.setdefault(s_idx, []).append(f"{kind}:{severity}")
+            except (ValueError, KeyError, TypeError):
+                continue
+
+    out_path = getattr(args, "output", None)
+    out_f = open(out_path, "w", newline="", encoding="utf-8") if out_path and out_path != "-" else sys.stdout
+    try:
+        writer = csv.writer(out_f)
+        writer.writerow(["step_index", "command", "exit_code", "duration_ms", "signals"])
+        for s in steps:
+            s_idx = s.get("step_index", 0)
+            cmd = s.get("command", "")
+            code = s.get("exit_code", 0)
+            dur = s.get("duration_ms", 0)
+            sigs = ";".join(signals_by_step.get(s_idx, []))
+            writer.writerow([s_idx, cmd, code, dur, sigs])
+    finally:
+        if out_f is not sys.stdout:
+            out_f.close()
+
+    return EXIT_OK
+
+
+def cmd_compress(args) -> int:
+    """Compress a completed log using gzip."""
+    path = Path(args.logfile)
+    _check_readable(path)
+    if str(path).endswith(".gz"):
+        raise CliError(f"{path} is already compressed")
+
+    from .signer import manifest_path
+    mp = manifest_path(path)
+    is_closed = False
+    if mp.exists():
+        is_closed = True
+    else:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        rec = json.loads(line)
+                        if rec.get("event", {}).get("event_type") == "session.end":
+                            is_closed = True
+                    except Exception:
+                        continue
+        except OSError:
+            pass
+
+    if not is_closed:
+        raise CliError("log session is not closed; cannot compress an incomplete log")
+
+    out_path = Path(str(path) + ".gz")
+    try:
+        with open(path, "rb") as f_in, gzip.open(out_path, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    except OSError as e:
+        raise CliError(f"failed to compress {path}: {getattr(e, 'strerror', None) or e}")
+
+    print(f"Compressed {path} -> {out_path}")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="agentbox")
     p.add_argument("--version", action="version", version=f"agentbox {__version__}")
@@ -503,6 +633,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("demo", help="run a self-contained demo (no Docker, no API key)")
     d.set_defaults(fn=cmd_demo)
+
+    ex = sub.add_parser("export", help="export steps to CSV")
+    ex.add_argument("logfile")
+    ex.add_argument(
+        "--format", "-f",
+        choices=["csv"],
+        default="csv",
+        help="output format (default: csv)",
+    )
+    ex.add_argument(
+        "--output", "-o",
+        default=None,
+        help="write exported data to a file instead of stdout",
+    )
+    ex.set_defaults(fn=cmd_export)
+
+    cp = sub.add_parser("compress", help="gzip-compress a completed log")
+    cp.add_argument("logfile")
+    cp.set_defaults(fn=cmd_compress)
 
     return p
 
