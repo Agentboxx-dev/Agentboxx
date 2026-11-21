@@ -382,3 +382,46 @@ def test_noncanonical_s_signature_rejected():
     s_malleated = (int.from_bytes(sig_b[32:], "little") + L).to_bytes(32, "little")
     with pytest.raises(InvalidSignature):
         load_ed25519_public_key(pk).verify(sig_b[:32] + s_malleated, bytes.fromhex(msg))
+
+def test_cli_verify_missing_receipt_returns_exit_incomplete(tmp_path, capsys):
+    key_dir = tmp_path / "keys"
+    cli_main(["keygen", "--dir", str(key_dir)])
+
+    # Session closed without an Ed25519 key configured -> no receipt generated
+    rec = Recorder(
+        "session-no-receipt",
+        workspace=str(tmp_path / "ws"),
+        log_dir=str(tmp_path / "runs"),
+    )
+    rec.run("echo hello")
+    rec.close()
+
+    rp = receipt_path(rec.log_path)
+    assert not rp.exists()
+
+    # 1. Inferred receipt path from logfile
+    code = cli_main([
+        "verify",
+        str(rec.log_path),
+        "--pubkey",
+        str(key_dir / "ed25519.pub"),
+    ])
+    assert code == 2  # EXIT_INCOMPLETE
+    captured = capsys.readouterr()
+    assert f"NO RECEIPT FOUND: {rp}" in captured.out
+    assert "This session may have been closed before a keypair existed. Run agentbox keygen before starting a session." in captured.out
+    assert "RECEIPT VERIFICATION FAILED" not in captured.out
+
+    # 2. Explicit missing receipt path
+    missing_rp = tmp_path / "nonexistent.receipt.json"
+    code = cli_main([
+        "verify",
+        str(rec.log_path),
+        "--receipt",
+        str(missing_rp),
+        "--pubkey",
+        str(key_dir / "ed25519.pub"),
+    ])
+    assert code == 2  # EXIT_INCOMPLETE
+    captured = capsys.readouterr()
+    assert f"NO RECEIPT FOUND: {missing_rp}" in captured.out
