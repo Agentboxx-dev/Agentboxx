@@ -413,3 +413,15 @@ If you use agentboxx in a project or experiment, open a pull request to add your
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+### CI / CD: GitHub Action for PR Audit Gates
+
+Verify agent-authored PRs automatically in your repository:
+
+```yaml
+- uses: Agentboxx-dev/Agentboxx/.github/actions/verify@v1
+  with:
+    log-path: runs/session.ndjson
+```
+
+See [docs/github-action.md](docs/github-action.md) for full options and public-key receipt verification.
