@@ -211,6 +211,15 @@ def cmd_verify(args) -> int:
                 else:
                     raise CliError("receipt verification requires --pubkey <path_or_hex>")
 
+            if not Path(rf).exists():
+                rf_display = receipt_file or receipt_path(args.logfile)
+                print(f"NO RECEIPT FOUND: {rf_display}")
+                print(
+                    "This session may have been closed before a keypair existed. "
+                    "Run agentbox keygen before starting a session."
+                )
+                return EXIT_INCOMPLETE
+
             problems, payload = verify_receipt(target_path, rf, pk)
             if problems:
                 print("RECEIPT VERIFICATION FAILED (tampered or corrupt):")
@@ -314,6 +323,8 @@ def _replay_verdict(args):
             pk = pubkey or (DEFAULT_ED25519_PUB_PATH if DEFAULT_ED25519_PUB_PATH.exists() else None)
             if pk is None:
                 raise CliError("receipt verification requires --pubkey <path_or_hex>")
+            if not Path(rf).exists():
+                return Verdict(INCOMPLETE, [f"receipt file not found: {rf}"])
             problems, _ = verify_receipt(args.logfile, rf, pk)
             return Verdict(TAMPERED if problems else VERIFIED, list(problems))
         problems, incomplete = _run_verify(args.logfile, key)
