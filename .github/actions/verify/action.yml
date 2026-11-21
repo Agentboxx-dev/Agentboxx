@@ -1,0 +1,112 @@
+name: 'Agentboxx Verify'
+description: 'Verify cryptographic integrity and task contract verdicts of Agentboxx flight logs and evidence bundles in CI.'
+author: 'Agentboxx'
+
+inputs:
+  log-path:
+    description: 'Path to the .ndjson log, .ndjson.gz, or .agentbox.zip evidence bundle'
+    required: true
+  pubkey:
+    description: 'Path or hex string of the Ed25519 public key for receipt verification'
+    required: false
+    default: ''
+  key:
+    description: 'HMAC symmetric key string or path to key file'
+    required: false
+    default: ''
+
+outputs:
+  verified:
+    description: 'Whether the log verified successfully ("true" or "false")'
+    value: ${{ steps.run-verify.outputs.verified }}
+  exit-code:
+    description: 'Exit code of the agentbox verify command'
+    value: ${{ steps.run-verify.outputs.exit_code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Ensure agentbox is available
+      shell: bash
+      run: |
+        if ! command -v agentbox &> /dev/null; then
+          echo "agentbox not found in PATH. Installing agentboxx..."
+          python3 -m pip install --upgrade pip
+          python3 -m pip install agentboxx
+        fi
+
+    - name: Run agentbox verify
+      id: run-verify
+      shell: bash
+      run: |
+        LOG_PATH="${{ inputs.log-path }}"
+        PUBKEY="${{ inputs.pubkey }}"
+        KEY="${{ inputs.key }}"
+
+        if [ ! -f "$LOG_PATH" ]; then
+          echo "::error title=Agentboxx Audit Gate::Log file '$LOG_PATH' does not exist."
+          echo "verified=false" >> "$GITHUB_OUTPUT"
+          echo "exit_code=3" >> "$GITHUB_OUTPUT"
+          exit 3
+        fi
+
+        CMD="agentbox verify \"$LOG_PATH\""
+        if [ -n "$PUBKEY" ]; then
+          CMD="$CMD --pubkey \"$PUBKEY\""
+        fi
+        if [ -n "$KEY" ]; then
+          CMD="$CMD --key \"$KEY\""
+        fi
+
+        echo "Executing: $CMD"
+        set +e
+        OUTPUT=$(eval $CMD 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        echo "$OUTPUT"
+
+        if [ $EXIT_CODE -eq 0 ]; then
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+          echo "exit_code=0" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Agentboxx Audit Gate::Flight log '$LOG_PATH' verified successfully. Log is intact."
+        else
+          echo "verified=false" >> "$GITHUB_OUTPUT"
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "::error title=Agentboxx Audit Gate::Flight log '$LOG_PATH' failed verification (exit code: $EXIT_CODE)."
+        fi
+
+        # Write to GitHub Step Summary
+        echo "## 🛡️ Agentboxx PR Audit Gate" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ $EXIT_CODE -eq 0 ]; then
+          echo "✅ **Result:** \`VERIFIED ✓\` — Cryptographic integrity intact." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Result:** \`TAMPERED / FAILED ✗\` (exit code: $EXIT_CODE)" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|---|---||" >> $GITHUB_STEP_SUMMARY
+        echo "| **Log File** | \`$LOG_PATH\` |" >> $GITHUB_STEP_SUMMARY
+        if [ -n "$PUBKEY" ]; then
+          echo "| **Verification Mode** | Ed25519 Public Key Receipt |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| **Verification Mode** | HMAC Hash Chain |" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Verification Output" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "$OUTPUT" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+        if command -v agentbox &> /dev/null; then
+          REPORT=$(agentbox report "$LOG_PATH" 2>/dev/null || true)
+          if [ -n "$REPORT" ]; then
+            echo "### Session Summary" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "$REPORT" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+
+        exit $EXIT_CODE
