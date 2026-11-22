@@ -20,6 +20,21 @@ pytest
 
 Docker is optional. The Docker test is skipped when Docker is unavailable.
 
+## Dev container / Codespaces
+
+Open the repository in GitHub Codespaces or VS Code with the Dev Containers extension and you get a Python 3.12 environment with Docker-in-Docker and all dev dependencies pre-installed.
+
+The configuration is in `.devcontainer/devcontainer.json`.
+
+## Makefile targets
+
+| Target | Command | What it does |
+|---|---|---|
+| `make test` | `pytest -q` | Run the test suite |
+| `make lint` | `ruff check .` | Check style with ruff |
+| `make demo` | `agentbox demo` | Run the scripted stuck-agent demo |
+| `make clean` | `rm -rf runs/ workspace/ .pytest_cache/ __pycache__/ .ruff_cache/` | Remove generated files |
+
 ## Making a change
 
 - **Branch from `main`**, one branch per issue: `git checkout -b fix-short-description`.
