@@ -4,7 +4,7 @@ import pytest
 
 from agentbox import Recorder, verify_log
 from agentbox.executor import run_command
-from agentbox.redact import add_pattern, redact
+from agentbox.redact import Redactor, add_pattern, redact
 from agentbox.signer import load_or_create_key
 
 # Fake secrets are assembled at runtime so secret scanners do not flag this file.
@@ -79,3 +79,70 @@ def test_secret_never_reaches_signed_log(tmp_path):
             if '"event_type": "step"' in ln][0]["data"]
     assert step["redactions"]["secret_assignment"] >= 2
     assert verify_log(rec.log_path, load_or_create_key(tmp_path / "key")) == ([], [])
+
+
+# ---------------------------------------------------------------------------
+# Issue #93 – Configurable custom secret patterns and redaction validation
+# ---------------------------------------------------------------------------
+
+
+
+def test_custom_redactor_instance():
+    r = Redactor(extra_patterns=[("corp_token", r"corp_[A-Za-z0-9]{24}")])
+    result, counts = r.redact("found corp_ABCDEFGHIJKLMNOPQRSTUVWX in log")
+    assert "[REDACTED:corp_token]" in result
+    assert counts.get("corp_token", 0) >= 1
+
+
+def test_custom_pattern_replacement_format():
+    r = Redactor(extra_patterns=[("corp_token", r"corp_[A-Za-z0-9]{24}")])
+    result, _ = r.redact("corp_ABCDEFGHIJKLMNOPQRSTUVWX")
+    assert result == "[REDACTED:corp_token]"
+
+
+def test_builtin_patterns_still_active_with_custom():
+    r = Redactor(extra_patterns=[("corp_token", r"corp_[A-Za-z0-9]{24}")])
+    result, counts = r.redact("key=AKIAIOSFODNN7EXAMPLE corp_ABCDEFGHIJKLMNOPQRSTUVWX")
+    assert "[REDACTED:aws_key]" in result
+    assert "[REDACTED:corp_token]" in result
+
+
+def test_redactor_no_extra_patterns():
+    r = Redactor()
+    result, counts = r.redact("AKIAIOSFODNN7EXAMPLE")
+    assert "[REDACTED:aws_key]" in result
+
+
+def test_redactor_custom_replacement():
+    r = Redactor(extra_patterns=[("corp_token", r"corp_[A-Za-z0-9]{24}", "***CORP***")])
+    result, counts = r.redact("corp_ABCDEFGHIJKLMNOPQRSTUVWX")
+    assert result == "***CORP***"
+    assert counts.get("corp_token", 0) >= 1
+
+
+def test_redact_value_with_custom_pattern():
+    r = Redactor(extra_patterns=[("corp_token", r"corp_[A-Za-z0-9]{24}")])
+    obj, counts = r.redact_value({"data": "corp_ABCDEFGHIJKLMNOPQRSTUVWX"})
+    assert obj["data"] == "[REDACTED:corp_token]"
+
+
+def test_redact_all_with_custom_pattern():
+    r = Redactor(extra_patterns=[("corp_token", r"corp_[A-Za-z0-9]{24}")])
+    cmd, stdout, stderr, counts = r.redact_all(
+        "run agent",
+        "output corp_ABCDEFGHIJKLMNOPQRSTUVWX",
+        "error corp_ABCDEFGHIJKLMNOPQRSTUVWX",
+    )
+    assert "[REDACTED:corp_token]" in stdout
+    assert "[REDACTED:corp_token]" in stderr
+
+
+def test_backward_compat_no_redact_patterns():
+    """Redactor() with no args behaves identically to module-level redact()."""
+    from agentbox.redact import redact as module_redact
+    r = Redactor()
+    text = "Authorization: Bearer sk-abcdefghijklmnopqrstuv"
+    result_instance, _ = r.redact(text)
+    result_module, _ = module_redact(text)
+    assert result_instance == result_module
+

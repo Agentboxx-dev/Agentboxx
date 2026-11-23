@@ -106,3 +106,108 @@ def redact_value(obj, _under_secret_key: bool = False, _depth: int = 0):
             counts = merge_counts(counts, c)
         return out, counts
     return obj, counts
+
+
+# ---------------------------------------------------------------------------
+# Per-instance Redactor — for custom enterprise patterns
+# ---------------------------------------------------------------------------
+
+class Redactor:
+    """A self-contained redactor with built-in patterns plus optional custom ones.
+
+    Use this when you need per-instance pattern sets, e.g. proprietary tokens
+    or customer PII that differ across deployments. The module-level ``redact``
+    and ``redact_all`` functions always use the shared global PATTERNS list.
+
+    Args:
+        extra_patterns: Optional list of ``(name, regex_string)`` or
+            ``(name, regex_string, replacement)`` tuples.
+            *replacement* defaults to ``[REDACTED:<name>]`` when omitted.
+
+    Example::
+
+        redactor = Redactor(extra_patterns=[
+            ("corp_token", r"corp_[A-Za-z0-9]{24}"),
+            ("db_dsn",     r"postgres://[^\s]+", "[REDACTED:db_dsn]"),
+        ])
+        clean, counts = redactor.redact("token=corp_ABCDEF123456789012345678")
+    """
+
+    def __init__(
+        self,
+        extra_patterns: "list[tuple] | None" = None,
+    ) -> None:
+        # Start with a copy of built-in patterns so this instance is independent
+        self._patterns: list[tuple] = list(PATTERNS)
+        if extra_patterns:
+            for entry in extra_patterns:
+                if len(entry) == 2:
+                    name, pat = entry
+                    replacement = f"[REDACTED:{name}]"
+                elif len(entry) == 3:
+                    name, pat, replacement = entry
+                    replacement = replacement or f"[REDACTED:{name}]"
+                else:
+                    raise ValueError(
+                        f"Each pattern must be (name, regex) or "
+                        f"(name, regex, replacement): {entry!r}"
+                    )
+                self._patterns.append((name, re.compile(pat), replacement))
+
+    # ------------------------------------------------------------------
+    # Core redaction methods — same contract as the module-level functions
+    # ------------------------------------------------------------------
+
+    def redact(self, text: str) -> "tuple[str, dict[str, int]]":
+        """Return *(clean_text, counts)* where counts maps pattern name to hits."""
+        counts: dict[str, int] = {}
+        if not text:
+            return text, counts
+        for name, rx, repl in self._patterns:
+            text, n = rx.subn(repl, text)
+            if n:
+                counts[name] = counts.get(name, 0) + n
+        return text, counts
+
+    def redact_all(
+        self, cmd: str, out: str, err: str
+    ) -> "tuple[str, str, str, dict[str, int]]":
+        """Redact command, stdout, and stderr; return all three plus merged counts."""
+        cmd, c1 = self.redact(cmd)
+        out, c2 = self.redact(out)
+        err, c3 = self.redact(err)
+        return cmd, out, err, merge_counts(c1, c2, c3)
+
+    def redact_value(
+        self, obj: object, _under_secret_key: bool = False, _depth: int = 0
+    ) -> "tuple[object, dict[str, int]]":
+        """Recursively redact secrets in JSON-like data structures."""
+        counts: dict[str, int] = {}
+        if _depth > _MAX_DEPTH:
+            return "[REDACTED:too_deep]", {"too_deep": 1}
+        if isinstance(obj, str):
+            if _under_secret_key and obj and not obj.startswith("[REDACTED:"):
+                return "[REDACTED:secret_key]", {"secret_key": 1}
+            return self.redact(obj)
+        if isinstance(obj, dict):
+            clean: dict = {}
+            for k, v in obj.items():
+                key, kc = self.redact(str(k))
+                val, vc = self.redact_value(
+                    v, bool(_SECRET_KEY.search(str(k))), _depth + 1
+                )
+                counts = merge_counts(counts, kc, vc)
+                base, n = key, 2
+                while key in clean:
+                    key, n = f"{base}#{n}", n + 1
+                clean[key] = val
+            return clean, counts
+        if isinstance(obj, list):
+            result = []
+            for item in obj:
+                val, c = self.redact_value(item, _under_secret_key, _depth + 1)
+                result.append(val)
+                counts = merge_counts(counts, c)
+            return result, counts
+        return obj, counts
+
