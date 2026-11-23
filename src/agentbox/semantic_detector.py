@@ -48,7 +48,7 @@ def stdlib_embed(text: str, dim: int = 256) -> list[float]:
     # Word unigrams and bigrams
     words = re.findall(r"\w+", cleaned)
     for w in words:
-        h = int(hashlib.md5(w.encode("utf-8")).hexdigest(), 16) % dim
+        h = int(hashlib.md5(w.encode("utf-8"), usedforsecurity=False).hexdigest(), 16) % dim
         vec[h] += 1.0
 
     for i in range(len(words) - 1):
