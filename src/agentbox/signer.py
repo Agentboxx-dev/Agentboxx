@@ -214,12 +214,16 @@ def receipt_path(log_path) -> Path:
 
 # --- Manifest (HMAC) ---
 
-def write_manifest(log_path, key: bytes, records: int, final_hash: str):
+def write_manifest(log_path, key: bytes, records: int, final_hash: str, status: str | None = None) -> dict:
     """Signed summary written when a session closes: record count and last hash."""
     payload = {"log": Path(log_path).name, "records": records, "final_hash": final_hash}
+    if status is not None:
+        payload["status"] = status
     sig = hmac.new(key, canon(payload), hashlib.sha256).hexdigest()
+    data = {"payload": payload, "sig": sig}
     manifest_path(log_path).write_text(
-        json.dumps({"payload": payload, "sig": sig}, indent=2), encoding="utf-8")
+        json.dumps(data, indent=2), encoding="utf-8")
+    return data
 
 
 # --- Receipt (Ed25519) ---
@@ -232,6 +236,7 @@ def write_receipt(
     session_id: str | None = None,
     started_at: float | None = None,
     closed_at: float | None = None,
+    status: str | None = None,
 ) -> dict:
     """Sign and write an Ed25519 run receipt for third-party verification."""
     pub = private_key.public_key()
@@ -253,6 +258,8 @@ def write_receipt(
         "started_at": started_at if started_at is not None else now,
         "closed_at": closed_at if closed_at is not None else now,
     }
+    if status is not None:
+        payload["status"] = status
     sig = private_key.sign(canon(payload)).hex()
     receipt = {"payload": payload, "signature": sig}
     receipt_path(log_path).write_text(
@@ -417,10 +424,97 @@ def verify_log(path: str | Path, key: bytes) -> tuple[list[str], list[str]]:
         except (OSError, ValueError, KeyError, TypeError):
             problems.append("manifest is unreadable")
     else:
-        if last.get("type") != "session.end":
+        if last.get("type") not in ("session.end", "session.recovered"):
             incomplete.append("no session.end record and no manifest: the session crashed, "
                               "is still running, or the end of the log was removed")
         else:
             incomplete.append("session is closed but its manifest is missing: "
                               "the manifest may have been deleted")
     return problems, incomplete
+
+def recover_log(
+    path: str | Path,
+    key: bytes,
+    ed25519_key=None,
+    reason: str = "interrupted",
+) -> tuple[dict, dict, dict | None]:
+    """Recover an abruptly terminated session log.
+
+    Validates that the existing records are intact and untampered, appends a signed
+    'session.recovered' record, and writes signed manifest and receipt with status 'interrupted'.
+
+    Returns (recovery_record, manifest_dict, receipt_dict).
+    """
+    path = Path(path)
+    problems = verify_file(path, key)
+    if problems:
+        raise ValueError(f"Cannot recover corrupt or tampered log: {'; '.join(problems)}")
+
+    last_seq = 0
+    prev_hash = GENESIS
+    started_at = None
+    session_id = path.stem
+    has_end = False
+
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            try:
+                rec = json.loads(line_str)
+                ev = rec["event"]
+                last_seq = ev["seq"]
+                prev_hash = rec["hash"]
+                if started_at is None:
+                    started_at = ev.get("ts")
+                if ev.get("event_type") in ("session.end", "session.recovered"):
+                    has_end = True
+                if ev.get("event_type") == "session.start":
+                    session_id = ev.get("data", {}).get("session_id", session_id)
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+    if not has_end:
+        seq = last_seq + 1
+        ts = time.time()
+        event = {
+            "schema_version": "0.1",
+            "event_id": str(uuid.uuid4()),
+            "event_type": "session.recovered",
+            "ts": ts,
+            "seq": seq,
+            "data": {
+                "reason": reason,
+                "status": "interrupted",
+                "interrupted": True,
+                "recovered_at": ts,
+            },
+        }
+        chain_hash = _sha((prev_hash + _sha(canon(event))).encode())
+        sig = hmac.new(key, chain_hash.encode(), hashlib.sha256).hexdigest()
+        recovery_rec = {"event": event, "prev_hash": prev_hash, "hash": chain_hash, "sig": sig}
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(recovery_rec, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+    else:
+        seq = last_seq
+        chain_hash = prev_hash
+        recovery_rec = {"event": {"seq": seq, "event_type": "session.recovered"}, "hash": chain_hash}
+
+    manifest = write_manifest(path, key, records=seq, final_hash=chain_hash, status="interrupted")
+
+    receipt = None
+    if ed25519_key is not None:
+        receipt = write_receipt(
+            path,
+            ed25519_key,
+            records=seq,
+            final_hash=chain_hash,
+            session_id=session_id,
+            started_at=started_at,
+            status="interrupted",
+        )
+
+    return recovery_rec, manifest, receipt

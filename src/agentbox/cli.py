@@ -15,8 +15,12 @@ from . import __version__
 from .signer import (
     DEFAULT_ED25519_PUB_PATH,
     generate_ed25519_keypair,
+    load_ed25519_private_key,
     load_or_create_key,
+    manifest_path,
     receipt_path,
+    recover_log,
+    verify_file,
     verify_log,
     verify_receipt,
 )
@@ -141,7 +145,30 @@ def _verify_and_print(path, key=None) -> int:
         for p in incomplete:
             print("  -", p)
         return EXIT_INCOMPLETE
-    print("OK: log is intact (chain and signatures valid).")
+    is_recovered = False
+    try:
+        mp = manifest_path(path)
+        if mp.exists():
+            m = json.loads(mp.read_text(encoding="utf-8"))
+            if m.get("payload", {}).get("status") == "interrupted":
+                is_recovered = True
+        if not is_recovered:
+            with _open_log(path) as f:
+                for line in f:
+                    try:
+                        ev = json.loads(line).get("event", {})
+                        if ev.get("event_type") == "session.recovered":
+                            is_recovered = True
+                            break
+                    except (ValueError, KeyError):
+                        continue
+    except Exception:
+        pass
+
+    if is_recovered:
+        print("OK: Session recovered (interrupted execution).")
+    else:
+        print("OK: log is intact (chain and signatures valid).")
     _print_tool_call_summary(path)
     return EXIT_OK
 
@@ -228,7 +255,10 @@ def cmd_verify(args) -> int:
                 return EXIT_TAMPERED
             key_id = payload.get("key_id", "unknown") if payload else "unknown"
             records = payload.get("record_count", 0) if payload else 0
-            print(f"OK: Ed25519 receipt verified ({records} records, key ID {key_id}). Log is intact.")
+            if payload and payload.get("status") == "interrupted":
+                print(f"OK: Session recovered (interrupted execution). Ed25519 receipt verified ({records} records, key ID {key_id}).")
+            else:
+                print(f"OK: Ed25519 receipt verified ({records} records, key ID {key_id}). Log is intact.")
             _print_tool_call_summary(args.logfile)
             return EXIT_OK
 
@@ -665,6 +695,13 @@ def build_parser() -> argparse.ArgumentParser:
     cp.set_defaults(fn=cmd_compress)
 
 
+    p_recover = sub.add_parser("recover", help="seal a crashed or interrupted session log")
+    p_recover.add_argument("logfile", help="path to the crashed .ndjson log")
+    p_recover.add_argument("--key", "-k", default=None, help="path to HMAC key file (default: ~/.agentbox/key)")
+    p_recover.add_argument("--ed25519-key", default=None, help="path to Ed25519 private key for signing receipt")
+    p_recover.add_argument("--reason", default="interrupted", help="reason for recovery (default: interrupted)")
+    p_recover.set_defaults(fn=cmd_recover)
+
     p_redact = sub.add_parser("redact-test", help="Test redaction patterns against sample strings")
     p_redact.add_argument("--pattern", metavar="name:regex", action="append",
                           help="Custom pattern as name:regex (repeatable)")
@@ -677,6 +714,52 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+
+
+def cmd_recover(args) -> int:
+    """Seal an abruptly terminated session log with session.recovered, manifest, and receipt."""
+    _check_readable(args.logfile)
+    log_path = Path(args.logfile)
+
+    key = None
+    if getattr(args, "key", None):
+        kp = Path(args.key)
+        if not kp.exists():
+            raise CliError(f"HMAC key file not found: {args.key}")
+        key = bytes.fromhex(kp.read_text().strip())
+    else:
+        key = load_or_create_key()
+
+    # Pre-crash integrity verification
+    problems = verify_file(log_path, key)
+    if problems:
+        print("CANNOT RECOVER: log contains tampered or corrupt records prior to crash:")
+        for prob in problems:
+            print("  -", prob)
+        return EXIT_TAMPERED
+
+    ed25519_key_path = getattr(args, "ed25519_key", None)
+    try:
+        ed_key = load_ed25519_private_key(ed25519_key_path)
+    except Exception as e:
+        if ed25519_key_path:
+            raise CliError(f"failed to load Ed25519 private key: {e}")
+        ed_key = None
+
+    reason = getattr(args, "reason", None) or "interrupted"
+    try:
+        _, manifest, _ = recover_log(
+            log_path,
+            key=key,
+            ed25519_key=ed_key,
+            reason=reason,
+        )
+    except Exception as e:
+        raise CliError(f"recovery failed: {e}")
+
+    records = manifest["payload"]["records"]
+    print(f"OK: Session recovered ({records} records sealed with status 'interrupted').")
+    return EXIT_OK
 
 
 def cmd_redact_test(args) -> int:

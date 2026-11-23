@@ -1,5 +1,8 @@
 """The main API. Wrap every action your agent takes in `recorder.run(...)`."""
+import atexit
 import hashlib
+import os
+import signal as _signal
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -102,6 +105,7 @@ class Recorder:
         self.detector = LoopDetector(loop_cfg)
         self.step_index = 0
         self.closed = False
+        self._register_exit_handlers()
 
         if isinstance(contract, dict):
             self.contract: TaskContract | None = TaskContract.from_dict(contract)
@@ -496,6 +500,49 @@ class Recorder:
             "sandbox": sbx,
         }
 
+    def _register_exit_handlers(self) -> None:
+        """Register atexit and signal handlers (SIGTERM, SIGINT) to seal session on unexpected termination."""
+        def _cleanup():
+            if not self.closed:
+                try:
+                    self.close(reason="process_exit")
+                except Exception:
+                    pass
+
+        self._atexit_cleanup = _cleanup
+        atexit.register(_cleanup)
+
+        try:
+            for sig in (_signal.SIGINT, _signal.SIGTERM):
+                prev_h = _signal.getsignal(sig)
+
+                def _signal_handler(signum, frame, old_h=prev_h):
+                    if not self.closed:
+                        try:
+                            sig_name = _signal.Signals(signum).name.lower()
+                            self.close(reason=f"signal_{sig_name}")
+                        except Exception:
+                            pass
+                    if callable(old_h):
+                        old_h(signum, frame)
+                    elif old_h == _signal.SIG_DFL:
+                        _signal.signal(signum, _signal.SIG_DFL)
+                        os.kill(os.getpid(), signum)
+
+                _signal.signal(sig, _signal_handler)
+        except (ValueError, AttributeError, RuntimeError):
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.close(reason=f"exception:{exc_type.__name__}")
+        else:
+            self.close(reason="done")
+        return False
+
     def close(self, reason: str = "done") -> None:
         """Close the recording session and write the signed manifest and receipt.
 
@@ -506,6 +553,12 @@ class Recorder:
             return
 
         self.closed = True
+
+        if hasattr(self, "_atexit_cleanup"):
+            try:
+                atexit.unregister(self._atexit_cleanup)
+            except Exception:
+                pass
 
         if self.contract:
             elapsed_wall_s = time.monotonic() - self.start_wall_clock
