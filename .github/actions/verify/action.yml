@@ -28,6 +28,10 @@ runs:
   steps:
     - name: Ensure agentbox is available
       shell: bash
+      env:
+        LOG_PATH: ${{ inputs.log-path }}
+        PUBKEY: ${{ inputs.pubkey }}
+        KEY: ${{ inputs.key }}
       run: |
         if ! command -v agentbox &> /dev/null; then
           echo "agentbox not found in PATH. Installing agentboxx..."
@@ -38,10 +42,11 @@ runs:
     - name: Run agentbox verify
       id: run-verify
       shell: bash
+      env:
+        LOG_PATH: ${{ inputs.log-path }}
+        PUBKEY: ${{ inputs.pubkey }}
+        KEY: ${{ inputs.key }}
       run: |
-        LOG_PATH="${{ inputs.log-path }}"
-        PUBKEY="${{ inputs.pubkey }}"
-        KEY="${{ inputs.key }}"
 
         if [ ! -f "$LOG_PATH" ]; then
           echo "::error title=Agentboxx Audit Gate::Log file '$LOG_PATH' does not exist."
