@@ -664,8 +664,64 @@ def build_parser() -> argparse.ArgumentParser:
     cp.add_argument("logfile")
     cp.set_defaults(fn=cmd_compress)
 
+
+    p_redact = sub.add_parser("redact-test", help="Test redaction patterns against sample strings")
+    p_redact.add_argument("--pattern", metavar="name:regex", action="append",
+                          help="Custom pattern as name:regex (repeatable)")
+    p_redact.add_argument("--sample", metavar="TEXT", action="append",
+                          help="Sample string to test redaction against (repeatable)")
+    p_redact.add_argument("--patterns-file", metavar="FILE",
+                          help="JSON file with [[name, regex], ...] pattern list")
+    p_redact.set_defaults(fn=cmd_redact_test)
+
     return p
 
+
+
+
+def cmd_redact_test(args) -> int:
+    """Validate custom and built-in redaction patterns against sample strings."""
+    from .redact import Redactor
+
+    extra = []
+    if args.pattern:
+        for pat in args.pattern:
+            parts = pat.split(":", 1)
+            if len(parts) != 2:
+                print(f"[!] Invalid --pattern format (expected name:regex): {pat}")
+                return 1
+            extra.append((parts[0], parts[1]))
+
+    if args.patterns_file:
+        import json
+        pf = Path(args.patterns_file)
+        if not pf.exists():
+            print(f"[!] Patterns file not found: {args.patterns_file}")
+            return 1
+        data = json.loads(pf.read_text(encoding="utf-8"))
+        for entry in data:
+            extra.append(tuple(entry))
+
+    redactor = Redactor(extra_patterns=extra if extra else None)
+
+    samples = list(args.sample) if args.sample else []
+    if not samples:
+        print("[!] No --sample strings provided. Nothing to test.")
+        return 1
+
+    all_passed = True
+    for sample in samples:
+        result, counts = redactor.redact(sample)
+        redacted = result != sample
+        status = "[REDACTED]" if redacted else "[NOT REDACTED]"
+        print(f"{status}  {result}")
+        if counts:
+            for name, n in counts.items():
+                print(f"         pattern={name!r}  hits={n}")
+        if not redacted:
+            all_passed = False
+
+    return 0 if all_passed else 2
 
 def main(argv=None) -> int:
     if argv is not None:

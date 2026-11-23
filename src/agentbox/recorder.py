@@ -7,7 +7,7 @@ from typing import Any, Callable
 from .contract import ContractVerdict, TaskContract
 from .executor import error_signature, fingerprint, run_command
 from .loop_detector import LoopConfig, LoopDetector
-from .redact import merge_counts, redact, redact_all, redact_value
+from .redact import Redactor, merge_counts
 from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, load_ed25519_private_key
 from .toolcall import MAX_PAYLOAD_BYTES, as_text, cap_payload, serialize, to_jsonable
@@ -61,6 +61,7 @@ class Recorder:
         goal: str | None = None,
         semantic_cfg: SemanticDriftConfig | None = None,
         embed_fn: Callable[[str], list[float]] | None = None,
+        redact_patterns: list[tuple] | None = None,
     ) -> None:
         """Initialize a new recording session.
 
@@ -78,6 +79,8 @@ class Recorder:
             goal: Optional objective string for semantic drift detection.
             semantic_cfg: Optional config for semantic drift and thought repetition.
             embed_fn: Optional embedding callable mapping strings to float vectors.
+            redact_patterns: Optional list of (name, regex) or (name, regex, replacement)
+                tuples for custom secret redaction on top of the built-in patterns.
         """
         self.session_id, self.workspace, self.sandbox = (
             session_id,
@@ -85,6 +88,7 @@ class Recorder:
             sandbox,
         )
         self.agent_id = agent_id
+        self._redactor = Redactor(extra_patterns=redact_patterns)
         self.log_path = Path(log_dir) / f"{session_id}.ndjson"
         self.ed25519_key = load_ed25519_private_key(ed25519_key_path)
 
@@ -176,10 +180,10 @@ class Recorder:
         """
         self.step_index += 1
 
-        command, stdout, stderr, redactions = redact_all(
+        command, stdout, stderr, redactions = self._redactor.redact_all(
             command, stdout, stderr
         )
-        thought, t_counts = redact(thought)
+        thought, t_counts = self._redactor.redact(thought)
         redactions = merge_counts(redactions, t_counts)
 
         sig, cls = error_signature(stderr, exit_code)
@@ -281,12 +285,12 @@ class Recorder:
 
         self.step_index += 1
 
-        tool_name, c_name = redact(tool_name)
-        tool_source, c_src = redact(tool_source)
-        thought, c_thought = redact(thought)
+        tool_name, c_name = self._redactor.redact(tool_name)
+        tool_source, c_src = self._redactor.redact(tool_source)
+        thought, c_thought = self._redactor.redact(thought)
 
-        args, c_args = redact_value(to_jsonable(arguments))
-        res, c_res = redact_value(to_jsonable(result))
+        args, c_args = self._redactor.redact_value(to_jsonable(arguments))
+        res, c_res = self._redactor.redact_value(to_jsonable(result))
 
         redactions = merge_counts(
             c_name,
@@ -407,7 +411,7 @@ class Recorder:
 
         sbx = obs.pop("sandbox", None)
 
-        thought, t_counts = redact(thought)
+        thought, t_counts = self._redactor.redact(thought)
         redactions = merge_counts(obs.get("redactions", {}), t_counts)
 
         step = {
