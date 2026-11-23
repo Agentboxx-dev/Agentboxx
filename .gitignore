@@ -15,4 +15,4 @@ workspace-limit/
 verifiers/go/agentbox-verify
 verifiers/go/agentbox-verify.exe
 docs/demo.gif
-
+poetry.lock
