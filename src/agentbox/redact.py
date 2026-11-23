@@ -128,7 +128,7 @@ class Redactor:
 
         redactor = Redactor(extra_patterns=[
             ("corp_token", r"corp_[A-Za-z0-9]{24}"),
-            ("db_dsn",     r"postgres://[^\s]+", "[REDACTED:db_dsn]"),
+            ("db_dsn",     r"postgres://[^ ]+", "[REDACTED:db_dsn]"),
         ])
         clean, counts = redactor.redact("token=corp_ABCDEF123456789012345678")
     """
