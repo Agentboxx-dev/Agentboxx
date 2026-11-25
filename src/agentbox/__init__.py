@@ -1,4 +1,10 @@
 from .docker_backend import DockerNotAvailable, DockerSandbox, docker_available
+from .gvisor_backend import (
+    GVisorNotAvailable,
+    GVisorSandbox,
+    MicroVMSandbox,
+    gvisor_available,
+)
 from .egress_proxy import EgressPolicy
 from .contract import (
     Assertion,
@@ -29,6 +35,10 @@ __all__ = [
     "LoopConfig",
     "LoopDetector",
     "DockerSandbox",
+    "GVisorSandbox",
+    "MicroVMSandbox",
+    "gvisor_available",
+    "GVisorNotAvailable",
     "docker_available",
     "DockerNotAvailable",
     "EgressPolicy",
