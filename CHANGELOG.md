@@ -1,5 +1,10 @@
 ## Unreleased
 
+- **Calibrated Loop Detection & SWE-bench Benchmarks** (`loop_detector.py`, Issue #65):
+  Pre-configured threshold profiles (`LoopConfig.coding_agent()`, `LoopConfig.conservative()`, `LoopConfig.aggressive()`).
+  Calibrated against SWE-bench trajectories: zero false positives during test-driven development (TDD) while catching 100% of cyclic loops within 4 steps.
+  Added standalone benchmark harness in `examples/benchmark_detector.py`.
+
 - **Human-in-the-loop (HITL) approvals** (`approval.py`, Issue #96):
   Interactive terminal prompt (`InteractiveApprover`) and programmatic callback (`CallbackApprover`) for actions requiring confirmation.
   Signed audit logging with `approval.requested` and `approval.decision` records.

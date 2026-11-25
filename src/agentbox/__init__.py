@@ -19,12 +19,15 @@ from .approval import (
     StaticApprover,
     UnattendedApprovalError,
 )
+from .loop_detector import LoopConfig, LoopDetector
 from .policy import CommandRule, PolicyAction, PolicyDecision, SecurityPolicy
 from .recorder import Recorder
 from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, verify_file, verify_log
 
 __all__ = [
+    "LoopConfig",
+    "LoopDetector",
     "DockerSandbox",
     "docker_available",
     "DockerNotAvailable",
