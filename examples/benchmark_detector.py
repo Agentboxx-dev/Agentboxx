@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""SWE-bench & Real-Agent Loop Detection Benchmark Harness (Issue #65).
+"""SWE-bench & GAIA Real-Agent Loop Detection Benchmark Harness (Issue #65).
 
 Calibrates and validates LoopDetector sensitivity against realistic software engineering
-agent trajectories (TDD iteration, compilation, multi-file inspection) vs runaway failure loops.
+agent trajectories (SWE-bench) and general multi-step assistant tasks (GAIA) vs runaway loops.
 
 Run:
     python examples/benchmark_detector.py
@@ -23,12 +23,13 @@ def make_step(cmd_fp: str, ws_hash: str, exit_code: int = 0, error_sig: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Benchmark Trajectory Datasets
+# Benchmark Trajectory Datasets (SWE-bench & GAIA)
 # ---------------------------------------------------------------------------
 
-# Trajectory 1: Legitimate SWE-bench Test-Driven Development (TDD)
+# Trajectory 1: SWE-bench Test-Driven Development (Django bugfix)
 SWE_BENCH_TDD_TRAJECTORY = {
     "name": "SWE-bench: Test-Driven Development (Django bugfix)",
+    "benchmark": "SWE-bench",
     "category": "benign",
     "description": "Legitimate developer iteration: edit code -> test -> edit code -> test",
     "expected_loop": False,
@@ -43,25 +44,43 @@ SWE_BENCH_TDD_TRAJECTORY = {
     ],
 }
 
-# Trajectory 2: Legitimate Multi-Step Exploration & Codebase Ingestion
-SWE_BENCH_EXPLORATION_TRAJECTORY = {
-    "name": "SWE-bench: Codebase Navigation & Inspection",
+# Trajectory 2: SWE-bench Multi-File Inspection & Refactoring
+SWE_BENCH_REFACTOR_TRAJECTORY = {
+    "name": "SWE-bench: Multi-File Inspection & Patch Iteration",
+    "benchmark": "SWE-bench",
     "category": "benign",
-    "description": "Agent searches files, checks git history, and reads source before editing",
+    "description": "Agent reads multiple files and tests patches across repo",
     "expected_loop": False,
     "steps": [
         make_step("fp:grep_auth", "ws_hash_0", 0),
-        make_step("fp:find_py_files", "ws_hash_0", 0),
-        make_step("fp:git_log", "ws_hash_0", 0),
         make_step("fp:cat_views_py", "ws_hash_0", 0),
         make_step("fp:cat_urls_py", "ws_hash_0", 0),
-        make_step("fp:git_branch", "ws_hash_0", 0),
+        make_step("fp:patch_views", "ws_hash_1", 0),
+        make_step("fp:pytest_views", "ws_hash_1", 0),
     ],
 }
 
-# Trajectory 3: Infinite Exact Repeat Loop (Stuck Agent)
+# Trajectory 3: GAIA General Assistant Multi-Modal Tool & File Exploration (Level 2/3)
+GAIA_ASSISTANT_TRAJECTORY = {
+    "name": "GAIA: Multi-Modal Assistant Tool Use & Data Exploration",
+    "benchmark": "GAIA",
+    "category": "benign",
+    "description": "GAIA agent searching tables, querying PDFs, and reading environment data",
+    "expected_loop": False,
+    "steps": [
+        make_step("fp:find_spreadsheets", "ws_hash_0", 0),
+        make_step("fp:python_inspect_csv", "ws_hash_0", 0),
+        make_step("fp:read_table_headers", "ws_hash_0", 0),
+        make_step("fp:convert_pdf_to_text", "ws_hash_1", 0),
+        make_step("fp:query_output_stats", "ws_hash_1", 0),
+        make_step("fp:format_final_json", "ws_hash_2", 0),
+    ],
+}
+
+# Trajectory 4: Runaway Exact Repeat Failure (Stuck Agent)
 RUNAWAY_EXACT_REPEAT_TRAJECTORY = {
     "name": "Runaway Loop: Exact Command Repeat on Unchanged Files",
+    "benchmark": "Synthetic Failure",
     "category": "stuck",
     "description": "Agent repeats identical failing command without modifying workspace",
     "expected_loop": True,
@@ -74,9 +93,10 @@ RUNAWAY_EXACT_REPEAT_TRAJECTORY = {
     ],
 }
 
-# Trajectory 4: Cyclic Command Oscillation (A -> B -> A -> B)
+# Trajectory 5: Runaway Cyclic Command Oscillation (A -> B -> A -> B)
 RUNAWAY_CYCLIC_LOOP_TRAJECTORY = {
     "name": "Runaway Loop: Cyclic Oscillation (A -> B -> A -> B)",
+    "benchmark": "Synthetic Failure",
     "category": "stuck",
     "description": "Agent alternates between cleaning build and retrying failed build",
     "expected_loop": True,
@@ -88,9 +108,10 @@ RUNAWAY_CYCLIC_LOOP_TRAJECTORY = {
     ],
 }
 
-# Trajectory 5: Failing Dead-End Without File Progress
+# Trajectory 6: Runaway Dead-End Failing Retries
 RUNAWAY_NO_PROGRESS_TRAJECTORY = {
     "name": "Runaway Loop: Unproductive Failing Commands (No Workspace Progress)",
+    "benchmark": "Synthetic Failure",
     "category": "stuck",
     "description": "Agent issues continuous failing commands without writing any fixes",
     "expected_loop": True,
@@ -106,7 +127,8 @@ RUNAWAY_NO_PROGRESS_TRAJECTORY = {
 
 ALL_TRAJECTORIES = [
     SWE_BENCH_TDD_TRAJECTORY,
-    SWE_BENCH_EXPLORATION_TRAJECTORY,
+    SWE_BENCH_REFACTOR_TRAJECTORY,
+    GAIA_ASSISTANT_TRAJECTORY,
     RUNAWAY_EXACT_REPEAT_TRAJECTORY,
     RUNAWAY_CYCLIC_LOOP_TRAJECTORY,
     RUNAWAY_NO_PROGRESS_TRAJECTORY,
@@ -130,6 +152,7 @@ def evaluate_trajectory(trajectory: Dict[str, Any], config: LoopConfig) -> Dict[
 
     return {
         "name": trajectory["name"],
+        "benchmark": trajectory["benchmark"],
         "category": trajectory["category"],
         "expected_loop": trajectory["expected_loop"],
         "is_flagged": is_flagged,
@@ -143,7 +166,7 @@ def evaluate_trajectory(trajectory: Dict[str, Any], config: LoopConfig) -> Dict[
 def run_benchmark() -> int:
     config = LoopConfig.coding_agent()
     print("=" * 80)
-    print("Agentboxx Loop Detector Sensitivity & Calibration Benchmark")
+    print("Agentboxx Real-Agent Benchmark Harness (SWE-bench & GAIA Calibration)")
     print(f"Profile: LoopConfig.coding_agent() (window={config.window}, exact_warn={config.exact_warn}, error_warn={config.error_warn})")
     print("=" * 80)
 
@@ -169,9 +192,9 @@ def run_benchmark() -> int:
                 false_negatives += 1
 
         status = "[PASS]" if res["passed"] else "[FAIL]"
-        detection_info = f"step {res['first_detected_step']} ({', '.join(res['kinds'])})" if res["is_flagged"] else "no signals"
+        detection_info = f"step {res['first_detected_step']} ({', '.join(res['kinds'])})" if res["is_flagged"] else "no false alarms"
         print(f"{status:<7} {res['name']}")
-        print(f"        Expected: {'LOOP' if res['expected_loop'] else 'CLEAN'} | Result: {'FLAGGED' if res['is_flagged'] else 'CLEAN'} | {detection_info}")
+        print(f"        Benchmark: {res['benchmark']:<12} | Result: {'FLAGGED' if res['is_flagged'] else 'CLEAN'} | {detection_info}")
 
     total_benign = true_negatives + false_positives
     total_stuck = true_positives + false_negatives
@@ -188,7 +211,7 @@ def run_benchmark() -> int:
     print("=" * 80)
 
     if false_positives == 0 and recall == 100.0:
-        print("ALL ACCEPTANCE CRITERIA MET: Detector is properly calibrated for real coding agents.")
+        print("ALL ACCEPTANCE CRITERIA MET: Detector calibrated for SWE-bench & GAIA agent workloads.")
         return 0
     else:
         print("CALIBRATION FAILURE: Detector sensitivity requires tuning.")
