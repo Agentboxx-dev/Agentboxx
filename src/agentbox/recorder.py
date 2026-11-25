@@ -10,6 +10,7 @@ from typing import Any, Callable
 from .contract import ContractVerdict, TaskContract
 from .executor import error_signature, fingerprint, run_command
 from .loop_detector import LoopConfig, LoopDetector
+from .policy import PolicyAction, SecurityPolicy
 from .redact import Redactor, merge_counts
 from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, load_ed25519_private_key
@@ -65,6 +66,7 @@ class Recorder:
         semantic_cfg: SemanticDriftConfig | None = None,
         embed_fn: Callable[[str], list[float]] | None = None,
         redact_patterns: list[tuple] | None = None,
+        policy: SecurityPolicy | None = None,
     ) -> None:
         """Initialize a new recording session.
 
@@ -84,6 +86,8 @@ class Recorder:
             embed_fn: Optional embedding callable mapping strings to float vectors.
             redact_patterns: Optional list of (name, regex) or (name, regex, replacement)
                 tuples for custom secret redaction on top of the built-in patterns.
+            policy: Optional SecurityPolicy evaluated by run() before a command executes.
+                Blocked commands are never executed. None (default) changes nothing.
         """
         self.session_id, self.workspace, self.sandbox = (
             session_id,
@@ -92,6 +96,7 @@ class Recorder:
         )
         self.agent_id = agent_id
         self._redactor = Redactor(extra_patterns=redact_patterns)
+        self.policy = policy
         self.log_path = Path(log_dir) / f"{session_id}.ndjson"
         self.ed25519_key = load_ed25519_private_key(ed25519_key_path)
 
@@ -133,6 +138,9 @@ class Recorder:
 
         if agent_id:
             start["agent_id"] = agent_id
+
+        if policy is not None:
+            start["policy"] = policy.describe()
 
         if self.contract:
             if self.contract.test_files and not self.contract.test_hashes:
@@ -408,6 +416,13 @@ class Recorder:
         """
         self.step_index += 1
 
+        if self.policy is not None:
+            blocked = self._apply_policy(
+                command, thought, tool=tool, parent_step=parent_step, usage=usage
+            )
+            if blocked is not None:
+                return blocked
+
         if self.sandbox:
             obs = self.sandbox.run(command, timeout_s)
         else:
@@ -498,6 +513,118 @@ class Recorder:
             "observation": obs,
             "signals": signals,
             "sandbox": sbx,
+        }
+
+    def _policy_event(self, command, thought, decision, approval, tool, parent_step, usage):
+        """Build the (redacted) data for a policy.blocked / policy.approved event."""
+        cmd, _out, _err, redactions = self._redactor.redact_all(command, "", "")
+        thought, t_counts = self._redactor.redact(thought)
+        matched, m_counts = self._redactor.redact(decision.matched or "")
+
+        event = {
+            "session_id": self.session_id,
+            "step_index": self.step_index,
+            "thought": thought,
+            "command": cmd,
+            "command_fingerprint": fingerprint(cmd),
+            "action": decision.action.value,
+            "rule": decision.rule,
+            "reason": decision.reason,
+            "approval": approval,
+            "redactions": merge_counts(redactions, t_counts, m_counts),
+        }
+
+        if decision.matched:
+            event["matched"] = matched
+
+        if self.agent_id:
+            event["agent_id"] = self.agent_id
+
+        if tool:
+            event["tool"] = tool
+
+        if parent_step is not None:
+            event["parent_step_index"] = int(parent_step)
+
+        if usage:
+            event["usage"] = {str(k): int(v) for k, v in usage.items()}
+
+        return event
+
+    def _apply_policy(self, command, thought, *, tool, parent_step, usage):
+        """Evaluate the policy before execution.
+
+        Returns None when the command may run. Otherwise the command is NOT executed: a signed
+        policy.blocked event is written and a simulated error observation is returned.
+        """
+        decision = self.policy.evaluate(command, self.workspace)
+        if decision.action is PolicyAction.ALLOW:
+            return None
+
+        approval = None
+        if decision.action is PolicyAction.REQUIRE_APPROVAL:
+            approval = self.policy.request_approval(command, decision)
+
+        event = self._policy_event(
+            command, thought, decision, approval, tool, parent_step, usage
+        )
+
+        if approval == "approved":
+            self.writer.append("policy.approved", event)
+            return None
+
+        self.writer.append("policy.blocked", event)
+
+        message = (
+            f"agentbox policy blocked this command ({decision.rule}): {decision.reason}."
+        )
+        if decision.action is PolicyAction.REQUIRE_APPROVAL:
+            message += " Approval is required and was not granted."
+
+        ws_hash = workspace_hash(self.workspace)
+        sig = f"PolicyViolation:{fingerprint(decision.rule)}"
+        obs = {
+            "command": event["command"],
+            "command_fingerprint": event["command_fingerprint"],
+            "exit_code": 126,
+            "timed_out": False,
+            "output_limit_exceeded": False,
+            "stdout": _make_stream_record(""),
+            "stderr": _make_stream_record(message),
+            "error_signature": sig,
+            "error_class": "PolicyViolation",
+            "workspace_hash": ws_hash,
+            "duration_ms": 0,
+            "redactions": event["redactions"],
+        }
+
+        # A blocked attempt still counts as a step and feeds the loop detector.
+        observed = {
+            "command_fingerprint": obs["command_fingerprint"],
+            "workspace_hash": ws_hash,
+            "exit_code": 126,
+            "error_signature": sig,
+        }
+        signals = list(self.detector.observe(observed))
+        if self.semantic_detector and event["thought"]:
+            signals.extend(
+                self.semantic_detector.observe(event["thought"], self.step_index)
+            )
+
+        for signal in signals:
+            self.writer.append(
+                "analysis.signal",
+                {"step_index": self.step_index, **signal},
+            )
+
+        self._enforce_contract_budgets()
+
+        return {
+            "observation": obs,
+            "signals": signals,
+            "sandbox": None,
+            "blocked": True,
+            "policy": decision.to_dict(),
         }
 
     def _register_exit_handlers(self) -> None:
