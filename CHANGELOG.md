@@ -1,3 +1,10 @@
+## Unreleased
+
+- **Human-in-the-loop (HITL) approvals** (`approval.py`, Issue #96):
+  Interactive terminal prompt (`InteractiveApprover`) and programmatic callback (`CallbackApprover`) for actions requiring confirmation.
+  Signed audit logging with `approval.requested` and `approval.decision` records.
+  Configurable non-interactive fallback (`on_unattended="deny" | "fail"`) to prevent CI/CD pipelines from hanging indefinitely.
+
 # Changelog
 
 All notable changes to this project are documented in this file.

@@ -51,6 +51,8 @@ The first record has `prev_hash = GENESIS`. Every later record has `prev_hash` e
 | `network.egress` | Outbound request through egress proxy | `step_index`, `method`, `host`, `port`, `allowed`, `blocked_reason`, `ts` |
 | `policy.blocked` | A `SecurityPolicy` stopped a command before it ran (the command was **not** executed) | `step_index`, `command`, `command_fingerprint`, `action`, `rule`, `reason`, `matched`, `approval`, `thought`, `redactions`, optional `agent_id`, `tool`, `parent_step_index`, `usage` |
 | `policy.approved` | A command needing approval was approved and then ran; its `step` follows | same fields as `policy.blocked` |
+| `approval.requested` | A `SecurityPolicy` required approval and execution paused to request confirmation | `step_index`, `command`, `command_fingerprint`, `rule`, `reason`, `requested_at`, optional `timeout_s`, `thought`, `tool`, `metadata` |
+| `approval.decision` | Human operator or handler responded to the approval request | `approved`, `approver`, `rationale`, `decision_at`, `timed_out` |
 | `contract.verdict` | Before close, if contract configured | `passed`, `summary`, `assertions` (`name`, `kind`, `passed`, `details`), optional `budget_exceeded` |
 | `session.end` | Once, last, when closed | `reason`, `steps` |
 
