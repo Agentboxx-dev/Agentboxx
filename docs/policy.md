@@ -30,7 +30,10 @@ out["observation"]["exit_code"]      # 126, with an explanation in stderr
 
 ## Approval
 
-`REQUIRE_APPROVAL` calls `policy.approver(command, decision)`. Only an exact `True` approves. No approver, an exception, or any other return value blocks the command. An approved command is recorded as `policy.approved`, then runs and is logged as a normal `step`.
+`REQUIRE_APPROVAL` triggers human-in-the-loop (HITL) authorization before an action executes:
+- **Interactive Terminal Prompt (`InteractiveApprover`)**: Prompts the operator directly in the CLI terminal. In non-interactive environments (such as CI/CD runners), `on_unattended="deny"` fails closed without hanging, while `on_unattended="fail"` raises `UnattendedApprovalError`.
+- **Programmatic Callback (`CallbackApprover`)**: Integrates with custom webhook bots, Slack/Discord alerts, or ticketing services.
+- **Audit Ledger**: Every request and operator decision is recorded as signed `approval.requested` and `approval.decision` events in the tamper-evident `.ndjson` ledger. Approved commands log `policy.approved` before executing as a normal `step`.
 
 ## Limits
 
