@@ -1,3 +1,4 @@
+from .docker_backend import DockerNotAvailable, DockerSandbox, docker_available
 from .egress_proxy import EgressPolicy
 from .contract import (
     Assertion,
@@ -24,6 +25,9 @@ from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, verify_file, verify_log
 
 __all__ = [
+    "DockerSandbox",
+    "docker_available",
+    "DockerNotAvailable",
     "EgressPolicy",
     "Recorder",
     "SecurityPolicy",
