@@ -9,6 +9,15 @@ from .contract import (
     assert_file_exists,
     assert_file_hash,
 )
+from .approval import (
+    ApprovalDecision,
+    ApprovalHandler,
+    ApprovalRequest,
+    CallbackApprover,
+    InteractiveApprover,
+    StaticApprover,
+    UnattendedApprovalError,
+)
 from .policy import CommandRule, PolicyAction, PolicyDecision, SecurityPolicy
 from .recorder import Recorder
 from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
@@ -18,6 +27,13 @@ __all__ = [
     "EgressPolicy",
     "Recorder",
     "SecurityPolicy",
+    "ApprovalDecision",
+    "ApprovalHandler",
+    "ApprovalRequest",
+    "CallbackApprover",
+    "InteractiveApprover",
+    "StaticApprover",
+    "UnattendedApprovalError",
     "PolicyAction",
     "PolicyDecision",
     "CommandRule",
