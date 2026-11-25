@@ -5,12 +5,59 @@ from dataclasses import dataclass
 
 @dataclass
 class LoopConfig:
+    """Configuration thresholds for the LoopDetector engine."""
+
     window: int = 10
     exact_warn: int = 3
     exact_crit: int = 5
     error_warn: int = 3
     error_crit: int = 5
     no_progress_warn: int = 4
+
+    @classmethod
+    def coding_agent(cls) -> "LoopConfig":
+        """Calibrated against SWE-bench software engineering trajectories.
+
+        Permits iterative test-driven development (TDD) and multi-step debugging,
+        while catching repetitive error loops and oscillating command cycles.
+        """
+        return cls(
+            window=15,
+            exact_warn=4,
+            exact_crit=6,
+            error_warn=4,
+            error_crit=6,
+            no_progress_warn=6,
+        )
+
+    @classmethod
+    def conservative(cls) -> "LoopConfig":
+        """Permissive profile for exploratory or long-horizon agents."""
+        return cls(
+            window=20,
+            exact_warn=5,
+            exact_crit=8,
+            error_warn=5,
+            error_crit=8,
+            no_progress_warn=8,
+        )
+
+    @classmethod
+    def aggressive(cls) -> "LoopConfig":
+        """High-sensitivity profile for strict token and cost budgets."""
+        return cls(
+            window=8,
+            exact_warn=2,
+            exact_crit=4,
+            error_warn=2,
+            error_crit=4,
+            no_progress_warn=3,
+        )
+
+    @classmethod
+    def default(cls) -> "LoopConfig":
+        """Standard balanced profile."""
+        return cls()
 
 
 class LoopDetector:
