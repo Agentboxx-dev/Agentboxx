@@ -268,6 +268,44 @@
               } 
             } 
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "policy.blocked"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/policy_event"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "policy.approved"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/policy_event"
+              }
+            }
+          }
         }
       ]
     },
@@ -644,6 +682,27 @@
         "arguments_truncated": { "type": "boolean" },
         "result_truncated": { "type": "boolean" },
         "agent_id": { "type": "string" },
+        "parent_step_index": { "type": "integer", "minimum": 1 },
+        "usage": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "Token counts supplied by the caller, never computed by agentbox" }
+      }
+    },
+    "policy_event": {
+      "type": "object",
+      "required": ["session_id", "step_index", "command", "command_fingerprint", "action", "rule", "reason"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "step_index": { "type": "integer", "minimum": 1, "description": "A blocked command still takes a step index" },
+        "thought": { "type": "string", "description": "The model's reasoning, redacted" },
+        "command": { "type": "string", "description": "Redacted. Not executed for policy.blocked" },
+        "command_fingerprint": { "type": "string" },
+        "action": { "enum": ["deny", "require_approval"] },
+        "rule": { "type": "string", "description": "Name of the rule that decided" },
+        "reason": { "type": "string" },
+        "matched": { "type": "string", "description": "The part of the command that matched, redacted" },
+        "approval": { "enum": ["approved", "denied", "not_configured", "error", null], "description": "null for deny rules; the approval outcome for require_approval" },
+        "redactions": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "Count of secrets removed per pattern, never the values" },
+        "agent_id": { "type": "string" },
+        "tool": { "type": "string" },
         "parent_step_index": { "type": "integer", "minimum": 1 },
         "usage": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 }, "description": "Token counts supplied by the caller, never computed by agentbox" }
       }

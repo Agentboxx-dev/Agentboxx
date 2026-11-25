@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `analysis.signal` events for `semantic_loop` and `goal_drift`
 - Optional `embeddings` extra (`fastembed>=0.2.0`) in `pyproject.toml`
 - Comprehensive detection guide in `docs/detection.md` and FAQ in README
+- Pre-execution `SecurityPolicy` for `Recorder.run`: command prefix and regex rules (`ALLOW`/`DENY`/`REQUIRE_APPROVAL`), path blocklist and environment protection; `Recorder(policy=SecurityPolicy.default_strict())` ([#95](https://github.com/Agentboxx-dev/Agentboxx/issues/95))
+- Signed `policy.blocked` and `policy.approved` events; a blocked command is not executed and returns a simulated error observation (exit code 126)
 
 ## [0.3.1] - 2026-11-01
 

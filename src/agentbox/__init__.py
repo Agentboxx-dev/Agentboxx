@@ -9,6 +9,7 @@ from .contract import (
     assert_file_exists,
     assert_file_hash,
 )
+from .policy import CommandRule, PolicyAction, PolicyDecision, SecurityPolicy
 from .recorder import Recorder
 from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
 from .signer import ChainWriter, load_or_create_key, verify_file, verify_log
@@ -16,6 +17,10 @@ from .signer import ChainWriter, load_or_create_key, verify_file, verify_log
 __all__ = [
     "EgressPolicy",
     "Recorder",
+    "SecurityPolicy",
+    "PolicyAction",
+    "PolicyDecision",
+    "CommandRule",
     "SemanticDriftConfig",
     "SemanticDriftDetector",
     "ChainWriter",
