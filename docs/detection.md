@@ -161,8 +161,24 @@ Fires when the cosine similarity between the agent's recent thoughts and the ini
 | `semantic_loop` | Thought cosine similarity $\ge 0.88$ | Consecutive steps | 3 repeats | 5 repeats |
 | `goal_drift` | Thought-to-goal cosine similarity $< 0.40$ | 3 consecutive steps | 3 steps | — |
 
-> [!NOTE]
-> Threshold values are initial uncalibrated defaults. They can be customized programmatically via `LoopConfig` and `SemanticDriftConfig`.
+### Calibrated Profiles (SWE-bench & Real-World Agent Tasks)
+
+Agentboxx provides calibrated `LoopConfig` presets tailored to different agent execution workloads:
+
+| Profile | Window | Exact Warn/Crit | Error Warn/Crit | No Progress Warn | Best For |
+|---|---|---|---|---|---|
+| `LoopConfig.coding_agent()` | 15 | 4 / 6 | 4 / 6 | 6 | SWE-bench, test-driven development (TDD), compilation & iterative debugging |
+| `LoopConfig.conservative()` | 20 | 5 / 8 | 5 / 8 | 8 | Exploratory research, long-horizon workflows |
+| `LoopConfig.aggressive()` | 8 | 2 / 4 | 2 / 4 | 3 | Strict token & cost budgets |
+| `LoopConfig.default()` | 10 | 3 / 5 | 3 / 5 | 4 | General-purpose tasks |
+
+#### Usage:
+```python
+from agentbox import LoopConfig, Recorder
+
+rec = Recorder("dev-session", loop_cfg=LoopConfig.coding_agent())
+python examples/benchmark_detector.py
+```
 
 ---
 
