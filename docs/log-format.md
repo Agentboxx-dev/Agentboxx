@@ -49,6 +49,8 @@ The first record has `prev_hash = GENESIS`. Every later record has `prev_hash` e
 | `sandbox.resource` | Docker backend, after each step | `step_index`, `mem_bytes`, `mem_limit_bytes`, `mem_pct`, `cpu_pct`, `pids` |
 | `sandbox.crash` | OOM kill or stopped container | `step_index`, `kind`, `exit_code`, `running`, `oom_killed`, `oom_events` |
 | `network.egress` | Outbound request through egress proxy | `step_index`, `method`, `host`, `port`, `allowed`, `blocked_reason`, `ts` |
+| `policy.blocked` | A `SecurityPolicy` stopped a command before it ran (the command was **not** executed) | `step_index`, `command`, `command_fingerprint`, `action`, `rule`, `reason`, `matched`, `approval`, `thought`, `redactions`, optional `agent_id`, `tool`, `parent_step_index`, `usage` |
+| `policy.approved` | A command needing approval was approved and then ran; its `step` follows | same fields as `policy.blocked` |
 | `contract.verdict` | Before close, if contract configured | `passed`, `summary`, `assertions` (`name`, `kind`, `passed`, `details`), optional `budget_exceeded` |
 | `session.end` | Once, last, when closed | `reason`, `steps` |
 
