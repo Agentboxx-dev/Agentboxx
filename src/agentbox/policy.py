@@ -8,6 +8,7 @@ Docker sandbox remains the real containment layer.
 """
 import fnmatch
 import os
+import posixpath
 import re
 import shlex
 from dataclasses import dataclass
@@ -33,6 +34,15 @@ _SEGMENT_SPLIT = re.compile(r"&&|\|\||[;|&\n`()]")
 _PATH_SPLIT = re.compile(r"[\s<>=:,;|&()`]+")
 _GLOB_CHARS = re.compile(r"[*?\[\]]")
 _MAX_MATCHED = 200
+
+
+def _posix(p: str) -> str:
+    """Commands run under bash even on Windows, so compare paths in POSIX form."""
+    return p.replace(os.sep, "/") if os.sep != "/" else p
+
+
+def _is_abs(p: str) -> bool:
+    return p.startswith("/") or bool(re.match(r"^[A-Za-z]:/", p))
 
 
 def _raw_tokens(text: str) -> list[str]:
@@ -197,7 +207,7 @@ def _path_candidates(command: str) -> list[str]:
 def _path_matches(pat: str, absp: str, rel: str, base: str) -> bool:
     if "/" not in pat:
         return fnmatch.fnmatchcase(base, pat)
-    if pat.startswith("/"):
+    if _is_abs(pat):
         return fnmatch.fnmatchcase(absp, pat)
     return fnmatch.fnmatchcase(rel, pat) or fnmatch.fnmatchcase(absp, "*/" + pat)
 
@@ -231,7 +241,7 @@ class SecurityPolicy:
         self.protect_env = protect_env
         self.default_action = PolicyAction(default_action)
         self.approver = approver
-        self._patterns = [os.path.expanduser(p) if p.startswith("~") else p
+        self._patterns = [_posix(os.path.expanduser(p)) if p.startswith("~") else p
                           for p in self.blocked_paths]
         self._literals = [p for p in self._patterns
                           if "/" not in p and not _GLOB_CHARS.search(p)]
@@ -329,17 +339,17 @@ class SecurityPolicy:
         return None
 
     def _check_paths(self, command: str, workspace: str | None) -> PolicyDecision | None:
-        ws = os.path.abspath(workspace or os.getcwd())
-        home = os.path.expanduser("~")
+        ws = _posix(os.path.abspath(workspace or os.getcwd()))
+        home = _posix(os.path.expanduser("~"))
         for raw in _path_candidates(command):
             cand = raw.replace("${HOME}", home).replace("$HOME", home)
             if cand.startswith("~"):
-                cand = os.path.expanduser(cand)
-            absp = os.path.normpath(cand if os.path.isabs(cand) else os.path.join(ws, cand))
-            base = os.path.basename(absp)
+                cand = _posix(os.path.expanduser(cand))
+            absp = posixpath.normpath(cand if _is_abs(cand) else posixpath.join(ws, cand))
+            base = posixpath.basename(absp)
             if base in _PATH_EXCEPTIONS:
                 continue
-            rel = os.path.relpath(absp, ws)
+            rel = absp[len(ws) + 1:] if absp.startswith(ws + "/") else absp
             for pat in self._patterns:
                 if _path_matches(pat, absp, rel, base):
                     return PolicyDecision(PolicyAction.DENY, "path:" + pat,
