@@ -10,6 +10,7 @@ from typing import Any, Callable
 from .contract import ContractVerdict, TaskContract
 from .executor import error_signature, fingerprint, run_command
 from .loop_detector import LoopConfig, LoopDetector
+from .approval import ApprovalHandler, ApprovalRequest
 from .policy import PolicyAction, SecurityPolicy
 from .redact import Redactor, merge_counts
 from .semantic_detector import SemanticDriftConfig, SemanticDriftDetector
@@ -67,6 +68,7 @@ class Recorder:
         embed_fn: Callable[[str], list[float]] | None = None,
         redact_patterns: list[tuple] | None = None,
         policy: SecurityPolicy | None = None,
+        approver: ApprovalHandler | Callable | None = None,
     ) -> None:
         """Initialize a new recording session.
 
@@ -88,6 +90,7 @@ class Recorder:
                 tuples for custom secret redaction on top of the built-in patterns.
             policy: Optional SecurityPolicy evaluated by run() before a command executes.
                 Blocked commands are never executed. None (default) changes nothing.
+            approver: Optional ApprovalHandler or callable for human-in-the-loop approvals.
         """
         self.session_id, self.workspace, self.sandbox = (
             session_id,
@@ -97,6 +100,7 @@ class Recorder:
         self.agent_id = agent_id
         self._redactor = Redactor(extra_patterns=redact_patterns)
         self.policy = policy
+        self.approver = approver or (getattr(policy, "approver", None) if isinstance(getattr(policy, "approver", None), ApprovalHandler) else None)
         self.log_path = Path(log_dir) / f"{session_id}.ndjson"
         self.ed25519_key = load_ed25519_private_key(ed25519_key_path)
 
@@ -563,7 +567,26 @@ class Recorder:
 
         approval = None
         if decision.action is PolicyAction.REQUIRE_APPROVAL:
-            approval = self.policy.request_approval(command, decision)
+            handler = self.approver or (self.policy.approver if isinstance(getattr(self.policy, "approver", None), ApprovalHandler) else None)
+            if handler is not None:
+                # HITL approval workflow: emit approval.requested, await operator, emit approval.decision
+                req = ApprovalRequest(
+                    command=command,
+                    command_fingerprint=fingerprint(command),
+                    rule=decision.rule,
+                    reason=decision.reason,
+                    step_index=self.step_index,
+                    thought=thought,
+                    tool=tool,
+                    timeout_s=getattr(handler, "timeout_s", None),
+                )
+                self.writer.append("approval.requested", req.to_dict())
+
+                dec = handler.request_approval(req)
+                self.writer.append("approval.decision", dec.to_dict())
+                approval = "approved" if dec.approved else "denied"
+            else:
+                approval = self.policy.request_approval(command, decision)
 
         event = self._policy_event(
             command, thought, decision, approval, tool, parent_step, usage
