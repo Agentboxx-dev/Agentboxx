@@ -146,3 +146,85 @@ def test_backward_compat_no_redact_patterns():
     result_module, _ = module_redact(text)
     assert result_instance == result_module
 
+
+
+def test_recorder_run_redacts_custom_pattern_in_stdout_stderr_and_command(tmp_path):
+    """End-to-end regression test: Recorder.run() must apply custom redact_patterns."""
+    import hashlib
+    import json
+    import sys
+    from agentbox import Recorder
+
+    ws = tmp_path / "ws"
+    logs = tmp_path / "runs"
+    rec = Recorder(
+        session_id="redact-run-e2e",
+        workspace=str(ws),
+        log_dir=str(logs),
+        redact_patterns=[("corp_token", r"corp_[A-Za-z0-9]{12}")],
+    )
+    py = f'"{sys.executable}"'
+    res = rec.run(
+        f"{py} -c \"import sys; print('corp_' + 'AbCdEf123456'); "
+        f"print('err corp_' + 'ZzYyXx987654', file=sys.stderr)\"",
+        thought="Inspect corp_ThoughtToken",
+    )
+    rec.close()
+
+    obs = res["observation"]
+    assert "[REDACTED:corp_token]" in obs["stdout"]["text"]
+    assert "[REDACTED:corp_token]" in obs["stderr"]["text"]
+    assert obs["stdout"]["sha256"] == hashlib.sha256(obs["stdout"]["text"].encode()).hexdigest()
+    assert obs["redactions"].get("corp_token", 0) >= 3
+
+    raw = (logs / "redact-run-e2e.ndjson").read_text(encoding="utf-8")
+    assert "corp_AbCdEf123456" not in raw
+    assert "corp_ZzYyXx987654" not in raw
+    assert "corp_ThoughtToken" not in raw
+
+    # Verify step event has consistent sha256
+    events = [json.loads(line)["event"] for line in raw.splitlines() if line.strip()]
+    step = next(e for e in events if e["event_type"] == "step")
+    assert "[REDACTED:corp_token]" in step["data"]["stdout"]["text"]
+
+
+def test_recorder_run_with_sandbox_redacts_custom_pattern(tmp_path):
+    """Recorder.run() also applies custom redact_patterns to sandbox backend observations."""
+    from agentbox import Recorder
+    from agentbox.executor import build_observation
+
+    class _StreamCap:
+        def __init__(self, txt: str):
+            self._txt = txt
+            self.total = len(txt.encode())
+            self.truncated = False
+
+        def text(self) -> str:
+            return self._txt
+
+    class DummySandbox:
+        def describe(self):
+            return {"backend": "dummy"}
+
+        def stop(self):
+            pass
+
+        def run(self, command, timeout_s=60):
+            return build_observation(
+                command, 0, _StreamCap("result corp_Sandbox12345\n"), _StreamCap(""),
+                False, False, str(tmp_path), 10,
+            )
+
+    rec = Recorder(
+        session_id="redact-sbx-e2e",
+        workspace=str(tmp_path / "ws"),
+        log_dir=str(tmp_path / "runs"),
+        sandbox=DummySandbox(),
+        redact_patterns=[("corp_token", r"corp_[A-Za-z0-9]{12}")],
+    )
+    res = rec.run("echo test")
+    rec.close()
+
+    assert "[REDACTED:corp_token]" in res["observation"]["stdout"]["text"]
+    raw = (tmp_path / "runs" / "redact-sbx-e2e.ndjson").read_text(encoding="utf-8")
+    assert "corp_Sandbox12345" not in raw
