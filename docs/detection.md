@@ -161,15 +161,18 @@ Fires when the cosine similarity between the agent's recent thoughts and the ini
 | `semantic_loop` | Thought cosine similarity $\ge 0.88$ | Consecutive steps | 3 repeats | 5 repeats |
 | `goal_drift` | Thought-to-goal cosine similarity $< 0.40$ | 3 consecutive steps | 3 steps | — |
 
-### Calibrated Profiles (SWE-bench & Real-World Agent Tasks)
+> [!NOTE]
+> Threshold values are initial uncalibrated defaults. They can be customized programmatically via `LoopConfig` and `SemanticDriftConfig`.
 
-Agentboxx provides calibrated `LoopConfig` presets tailored to different agent execution workloads:
+### Preset Profiles (`LoopConfig`)
+
+Agentboxx provides pre-set `LoopConfig` threshold profiles tailored as starting points for different agent workflows. Note that the five scenario tests in `examples/benchmark_detector.py` do not distinguish between presets, because the default `LoopConfig` passes them too.
 
 | Profile | Window | Exact Warn/Crit | Error Warn/Crit | No Progress Warn | Best For |
 |---|---|---|---|---|---|
-| `LoopConfig.coding_agent()` | 15 | 4 / 6 | 4 / 6 | 6 | SWE-bench, test-driven development (TDD), compilation & iterative debugging |
-| `LoopConfig.conservative()` | 20 | 5 / 8 | 5 / 8 | 8 | Exploratory research, long-horizon workflows |
-| `LoopConfig.aggressive()` | 8 | 2 / 4 | 2 / 4 | 3 | Strict token & cost budgets |
+| `LoopConfig.coding_agent()` | 15 | 4 / 6 | 4 / 6 | 6 | Coding agents (starting point, uncalibrated) |
+| `LoopConfig.conservative()` | 20 | 5 / 8 | 5 / 8 | 8 | Exploratory research, long-horizon workflows (starting point, uncalibrated) |
+| `LoopConfig.aggressive()` | 8 | 2 / 4 | 2 / 4 | 3 | Strict token & cost budgets (starting point, uncalibrated) |
 | `LoopConfig.default()` | 10 | 3 / 5 | 3 / 5 | 4 | General-purpose tasks |
 
 #### Usage:
@@ -177,6 +180,10 @@ Agentboxx provides calibrated `LoopConfig` presets tailored to different agent e
 from agentbox import LoopConfig, Recorder
 
 rec = Recorder("dev-session", loop_cfg=LoopConfig.coding_agent())
+```
+
+Run the synthetic scenario test:
+```bash
 python examples/benchmark_detector.py
 ```
 
