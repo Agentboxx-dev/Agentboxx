@@ -28,7 +28,7 @@ def make_step(cmd_fp: str, ws_hash: str, exit_code: int = 0, error_sig: str = ""
 # ---------------------------------------------------------------------------
 
 # Scenario 1: Hand-written Test-Driven Development (TDD) edit-test sequence
-SWE_BENCH_TDD_TRAJECTORY = {
+TDD_SCENARIO = {
     "name": "Scenario: Test-Driven Development (edit-test cycle)",
     "category": "benign",
     "description": "Synthetic iterative sequence: edit code -> test -> edit code -> test",
@@ -45,7 +45,7 @@ SWE_BENCH_TDD_TRAJECTORY = {
 }
 
 # Scenario 2: Hand-written Multi-Step Exploration & Codebase Inspection
-SWE_BENCH_EXPLORATION_TRAJECTORY = {
+EXPLORATION_SCENARIO = {
     "name": "Scenario: Codebase Navigation & Inspection",
     "category": "benign",
     "description": "Synthetic read-only sequence inspecting files and git history before editing",
@@ -106,8 +106,8 @@ RUNAWAY_NO_PROGRESS_TRAJECTORY = {
 }
 
 ALL_TRAJECTORIES = [
-    SWE_BENCH_TDD_TRAJECTORY,
-    SWE_BENCH_EXPLORATION_TRAJECTORY,
+    TDD_SCENARIO,
+    EXPLORATION_SCENARIO,
     RUNAWAY_EXACT_REPEAT_TRAJECTORY,
     RUNAWAY_CYCLIC_LOOP_TRAJECTORY,
     RUNAWAY_NO_PROGRESS_TRAJECTORY,
