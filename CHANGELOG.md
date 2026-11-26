@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Correction
+- Earlier changelog and documentation entries for `0.4.0` and `0.4.1` overstated the loop detector work from [#65](https://github.com/Agentboxx-dev/Agentboxx/issues/65), [#105](https://github.com/Agentboxx-dev/Agentboxx/pull/105), [#107](https://github.com/Agentboxx-dev/Agentboxx/pull/107), and [#109](https://github.com/Agentboxx-dev/Agentboxx/pull/109). No real SWE-bench or GAIA data was downloaded or run, no calibration or window-size sweep took place, and `main` never contained any GAIA sequence. `examples/benchmark_detector.py` only tests 5 hand-written synthetic sequences (2 normal, 3 stuck), which also pass under the pre-existing default `LoopConfig()`. The `[0.4.0]` entries below have been corrected to reflect what was actually built, and `README.md`, `docs/detection.md`, `docs/architecture.svg`, and code docstrings have been updated accordingly.
+
 ## [0.4.1] - 2026-11-26
 
 ### Fixed
@@ -25,10 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configurable `on_unattended="deny" | "fail"` fallback for CI/CD runs.
 - **Crash-Safe Session Finalization & Recovery** (`agentbox recover` CLI, [#94](https://github.com/Agentboxx-dev/Agentboxx/issues/94)).
 - **Custom Secret Redaction Patterns & `redact-test` CLI** (`redact.py`, [#93](https://github.com/Agentboxx-dev/Agentboxx/issues/93)).
-- **Calibrated Loop Detection & SWE-bench / GAIA Benchmarks** (`loop_detector.py`, `examples/benchmark_detector.py`, [#65](https://github.com/Agentboxx-dev/Agentboxx/issues/65), [#105](https://github.com/Agentboxx-dev/Agentboxx/pull/105)):
-  - Pre-configured `LoopConfig.coding_agent()`, `conservative()`, and `aggressive()` profiles achieving 0.0% FPR and 100% recall.
+- **LoopConfig Preset Profiles & Synthetic Scenario Check** (`loop_detector.py`, `examples/benchmark_detector.py`, [#65](https://github.com/Agentboxx-dev/Agentboxx/issues/65), [#105](https://github.com/Agentboxx-dev/Agentboxx/pull/105)) *(Corrected under Unreleased: previously mislabeled as calibrated SWE-bench / GAIA benchmarks with 0.0% FPR and 100% recall)*:
+  - Added uncalibrated `LoopConfig.coding_agent()`, `conservative()`, `aggressive()`, and `default()` preset profiles plus a 5-scenario hand-written regression test script (`examples/benchmark_detector.py`).
 - **Semantic Drift & Circular Reasoning Detector** (`semantic_detector.py`, [#30](https://github.com/Agentboxx-dev/Agentboxx/issues/30)): `semantic_loop` and `goal_drift` signals with optional `embeddings` extra (`fastembed>=0.2.0`).
-- **Root Exports & Updated Architecture**: Exported `DockerSandbox`, `docker_available`, `GVisorSandbox`, and `MicroVMSandbox` in `agentbox` ([#102](https://github.com/Agentboxx-dev/Agentboxx/issues/102)); added benchmark metrics to `README.md` and updated `docs/architecture.svg` ([#109](https://github.com/Agentboxx-dev/Agentboxx/pull/109)).
+- **Root Exports & Updated Architecture**: Exported `DockerSandbox`, `docker_available`, `GVisorSandbox`, and `MicroVMSandbox` in `agentbox` ([#102](https://github.com/Agentboxx-dev/Agentboxx/issues/102)); updated `README.md` and `docs/architecture.svg` ([#109](https://github.com/Agentboxx-dev/Agentboxx/pull/109)) *(Corrected under Unreleased: removed unsupported benchmark and rate claims from diagram and README)*.
 
 
 - Comprehensive detection guide in `docs/detection.md` and FAQ in README
