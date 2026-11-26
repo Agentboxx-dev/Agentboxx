@@ -16,10 +16,10 @@ class LoopConfig:
 
     @classmethod
     def coding_agent(cls) -> "LoopConfig":
-        """Calibrated against SWE-bench software engineering trajectories.
+        """Starting-point preset profile for coding agents (uncalibrated).
 
-        Permits iterative test-driven development (TDD) and multi-step debugging,
-        while catching repetitive error loops and oscillating command cycles.
+        Raises repeat and no-progress thresholds relative to default()
+        for iterative edit-test cycles while catching stuck loops.
         """
         return cls(
             window=15,
