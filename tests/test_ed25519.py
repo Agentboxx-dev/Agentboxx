@@ -425,3 +425,31 @@ def test_cli_verify_missing_receipt_returns_exit_incomplete(tmp_path, capsys):
     assert code == 2  # EXIT_INCOMPLETE
     captured = capsys.readouterr()
     assert f"NO RECEIPT FOUND: {missing_rp}" in captured.out
+
+
+
+def test_close_warns_when_no_ed25519_key(tmp_path, monkeypatch):
+    """Closing without an Ed25519 key emits a warning and records skip in signed log."""
+    monkeypatch.setenv("AGENTBOX_ED25519_KEY", str(tmp_path / "missing_ed25519.key"))
+    rec = Recorder(
+        "session-missing-key-warn",
+        workspace=str(tmp_path / "ws"),
+        log_dir=str(tmp_path / "runs"),
+    )
+    rec.run("echo hello")
+
+    with pytest.warns(
+        UserWarning,
+        match="agentbox: no Ed25519 key found, receipt not created",
+    ):
+        rec.close("done")
+
+    assert not receipt_path(rec.log_path).exists()
+    records = [
+        json.loads(line)["event"]
+        for line in rec.log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    end_event = next(e for e in records if e["event_type"] == "session.end")
+    assert end_event["data"]["receipt_created"] is False
+    assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
