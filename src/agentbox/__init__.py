@@ -69,4 +69,4 @@ __all__ = [
     "assert_file_hash",
     "assert_command",
 ]
-__version__ = "0.4.0"
+__version__ = "0.4.1"
