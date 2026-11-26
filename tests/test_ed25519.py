@@ -455,7 +455,6 @@ def test_close_warns_when_no_ed25519_key(tmp_path, monkeypatch):
     assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
 
 
-
 def test_require_receipt_raises_when_no_ed25519_key(tmp_path, monkeypatch):
     """Recorder(..., require_receipt=True) fails fast when no Ed25519 key exists."""
     monkeypatch.setenv("AGENTBOX_ED25519_KEY", str(tmp_path / "missing_ed25519.key"))
@@ -467,7 +466,6 @@ def test_require_receipt_raises_when_no_ed25519_key(tmp_path, monkeypatch):
             require_receipt=True,
         )
     assert not (tmp_path / "runs" / "session-require-fail.ndjson").exists()
-
 
 
 def test_require_receipt_raises_on_close_if_key_missing_and_stops_sandbox(tmp_path, keypair):
@@ -516,3 +514,27 @@ def test_require_receipt_raises_on_close_if_key_missing_and_stops_sandbox(tmp_pa
     ]
     end_event = next(e for e in records if e["event_type"] == "session.end")
     assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
+
+
+def test_require_receipt_succeeds_with_ed25519_key(tmp_path, keypair):
+    """Recorder(..., require_receipt=True) succeeds silently and writes receipt when key exists."""
+    import warnings
+
+    key_path, pub_path = keypair
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rec = Recorder(
+            "session-require-ok",
+            workspace=str(tmp_path / "ws"),
+            log_dir=str(tmp_path / "runs"),
+            ed25519_key_path=key_path,
+            require_receipt=True,
+        )
+        rec.run("echo ok")
+        rec.close("done")
+
+    assert not [w for w in caught if "Ed25519" in str(w.message)]
+    rp = receipt_path(rec.log_path)
+    assert rp.exists()
+    problems, _ = verify_receipt(rec.log_path, rp, pub_path)
+    assert problems == []
