@@ -110,6 +110,8 @@ For third-party verification without sharing symmetric secrets, Agentbox generat
 
 `signature` is `ed25519_sign(private_key, canon(payload))`. The receipt sits next to the log as `<session>.receipt.json`.
 
+If no Ed25519 private key is found when closing a session, `Recorder.close()` records `receipt_created: false` (`receipt_skipped_reason: "no_ed25519_key"`) in `session.end` and emits a warning. Pass `Recorder(..., require_receipt=True)` to raise a `RuntimeError` instead of closing without a receipt.
+
 ### Public-key verification
 
 Auditors verify the receipt with only the public key:

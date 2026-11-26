@@ -425,3 +425,116 @@ def test_cli_verify_missing_receipt_returns_exit_incomplete(tmp_path, capsys):
     assert code == 2  # EXIT_INCOMPLETE
     captured = capsys.readouterr()
     assert f"NO RECEIPT FOUND: {missing_rp}" in captured.out
+
+
+
+def test_close_warns_when_no_ed25519_key(tmp_path, monkeypatch):
+    """Closing without an Ed25519 key emits a warning and records skip in signed log."""
+    monkeypatch.setenv("AGENTBOX_ED25519_KEY", str(tmp_path / "missing_ed25519.key"))
+    rec = Recorder(
+        "session-missing-key-warn",
+        workspace=str(tmp_path / "ws"),
+        log_dir=str(tmp_path / "runs"),
+    )
+    rec.run("echo hello")
+
+    with pytest.warns(
+        UserWarning,
+        match="agentbox: no Ed25519 key found, receipt not created",
+    ):
+        rec.close("done")
+
+    assert not receipt_path(rec.log_path).exists()
+    records = [
+        json.loads(line)["event"]
+        for line in rec.log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    end_event = next(e for e in records if e["event_type"] == "session.end")
+    assert end_event["data"]["receipt_created"] is False
+    assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
+
+
+def test_require_receipt_raises_when_no_ed25519_key(tmp_path, monkeypatch):
+    """Recorder(..., require_receipt=True) fails fast when no Ed25519 key exists."""
+    monkeypatch.setenv("AGENTBOX_ED25519_KEY", str(tmp_path / "missing_ed25519.key"))
+    with pytest.raises(RuntimeError, match="require_receipt=True"):
+        Recorder(
+            "session-require-fail",
+            workspace=str(tmp_path / "ws"),
+            log_dir=str(tmp_path / "runs"),
+            require_receipt=True,
+        )
+    assert not (tmp_path / "runs" / "session-require-fail.ndjson").exists()
+
+
+def test_require_receipt_raises_on_close_if_key_missing_and_stops_sandbox(tmp_path, keypair):
+    """If ed25519_key is unavailable at close(), require_receipt=True cleans up and raises."""
+    key_path, _ = keypair
+    stopped = []
+
+    class DummySandbox:
+        def describe(self):
+            return {"backend": "dummy"}
+
+        def run(self, cmd, timeout_s=60):
+            from agentbox.executor import build_observation
+
+            class _Cap:
+                total = 0
+                truncated = False
+
+                def text(self):
+                    return ""
+
+            return build_observation(cmd, 0, _Cap(), _Cap(), False, False, str(tmp_path), 1)
+
+        def stop(self):
+            stopped.append(True)
+
+    rec = Recorder(
+        "session-require-close",
+        workspace=str(tmp_path / "ws"),
+        log_dir=str(tmp_path / "runs"),
+        ed25519_key_path=key_path,
+        sandbox=DummySandbox(),
+        require_receipt=True,
+    )
+    rec.run("echo ok")
+    rec.ed25519_key = None
+
+    with pytest.raises(RuntimeError, match="require_receipt=True"):
+        rec.close("done")
+
+    assert stopped == [True]
+    records = [
+        json.loads(line)["event"]
+        for line in rec.log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    end_event = next(e for e in records if e["event_type"] == "session.end")
+    assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
+
+
+def test_require_receipt_succeeds_with_ed25519_key(tmp_path, keypair):
+    """Recorder(..., require_receipt=True) succeeds silently and writes receipt when key exists."""
+    import warnings
+
+    key_path, pub_path = keypair
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rec = Recorder(
+            "session-require-ok",
+            workspace=str(tmp_path / "ws"),
+            log_dir=str(tmp_path / "runs"),
+            ed25519_key_path=key_path,
+            require_receipt=True,
+        )
+        rec.run("echo ok")
+        rec.close("done")
+
+    assert not [w for w in caught if "Ed25519" in str(w.message)]
+    rp = receipt_path(rec.log_path)
+    assert rp.exists()
+    problems, _ = verify_receipt(rec.log_path, rp, pub_path)
+    assert problems == []
