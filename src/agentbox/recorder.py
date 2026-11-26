@@ -770,15 +770,34 @@ class Recorder:
                 self.contract_verdict.to_dict(),
             )
 
-        self.writer.append(
-            "session.end",
-            {"reason": reason, "steps": self.step_index},
-        )
+        end_data: dict[str, Any] = {"reason": reason, "steps": self.step_index}
+        if not self.ed25519_key:
+            end_data["receipt_created"] = False
+            end_data["receipt_skipped_reason"] = "no_ed25519_key"
+
+        self.writer.append("session.end", end_data)
 
         self.writer.write_manifest()
 
+        receipt_error: RuntimeError | None = None
         if self.ed25519_key:
             self.writer.write_receipt(session_id=self.session_id)
+        else:
+            if self.require_receipt:
+                receipt_error = RuntimeError(
+                    "agentbox: require_receipt=True, but no Ed25519 key is available; "
+                    "cannot create receipt. Run 'agentbox keygen' or pass ed25519_key_path."
+                )
+            else:
+                warnings.warn(
+                    "agentbox: no Ed25519 key found, receipt not created. "
+                    "Run 'agentbox keygen' to enable third-party verification.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
         if self.sandbox:
             self.sandbox.stop()
+
+        if receipt_error is not None:
+            raise receipt_error
