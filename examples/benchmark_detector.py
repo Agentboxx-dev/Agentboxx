@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""SWE-bench & Real-Agent Loop Detection Benchmark Harness (Issue #65).
+"""Synthetic Loop Detection Scenario Test Harness (Issue #65).
 
-Calibrates and validates LoopDetector sensitivity against realistic software engineering
-agent trajectories (TDD iteration, compilation, multi-file inspection) vs runaway failure loops.
+Runs LoopDetector against five hand-written synthetic command sequences
+(2 normal iterative workflows and 3 stuck failure loops). This is a deterministic
+scenario test, not a measurement on real agent traces.
 
 Run:
     python examples/benchmark_detector.py
@@ -23,14 +24,14 @@ def make_step(cmd_fp: str, ws_hash: str, exit_code: int = 0, error_sig: str = ""
 
 
 # ---------------------------------------------------------------------------
-# Benchmark Trajectory Datasets
+# Hand-Written Synthetic Scenarios (5 cases)
 # ---------------------------------------------------------------------------
 
-# Trajectory 1: Legitimate SWE-bench Test-Driven Development (TDD)
-SWE_BENCH_TDD_TRAJECTORY = {
-    "name": "SWE-bench: Test-Driven Development (Django bugfix)",
+# Scenario 1: Hand-written Test-Driven Development (TDD) edit-test sequence
+TDD_SCENARIO = {
+    "name": "Scenario: Test-Driven Development (edit-test cycle)",
     "category": "benign",
-    "description": "Legitimate developer iteration: edit code -> test -> edit code -> test",
+    "description": "Synthetic iterative sequence: edit code -> test -> edit code -> test",
     "expected_loop": False,
     "steps": [
         make_step("fp:git_status", "ws_hash_0", 0),
@@ -43,11 +44,11 @@ SWE_BENCH_TDD_TRAJECTORY = {
     ],
 }
 
-# Trajectory 2: Legitimate Multi-Step Exploration & Codebase Ingestion
-SWE_BENCH_EXPLORATION_TRAJECTORY = {
-    "name": "SWE-bench: Codebase Navigation & Inspection",
+# Scenario 2: Hand-written Multi-Step Exploration & Codebase Inspection
+EXPLORATION_SCENARIO = {
+    "name": "Scenario: Codebase Navigation & Inspection",
     "category": "benign",
-    "description": "Agent searches files, checks git history, and reads source before editing",
+    "description": "Synthetic read-only sequence inspecting files and git history before editing",
     "expected_loop": False,
     "steps": [
         make_step("fp:grep_auth", "ws_hash_0", 0),
@@ -105,8 +106,8 @@ RUNAWAY_NO_PROGRESS_TRAJECTORY = {
 }
 
 ALL_TRAJECTORIES = [
-    SWE_BENCH_TDD_TRAJECTORY,
-    SWE_BENCH_EXPLORATION_TRAJECTORY,
+    TDD_SCENARIO,
+    EXPLORATION_SCENARIO,
     RUNAWAY_EXACT_REPEAT_TRAJECTORY,
     RUNAWAY_CYCLIC_LOOP_TRAJECTORY,
     RUNAWAY_NO_PROGRESS_TRAJECTORY,
@@ -140,18 +141,18 @@ def evaluate_trajectory(trajectory: Dict[str, Any], config: LoopConfig) -> Dict[
     }
 
 
-def run_benchmark() -> int:
+def run_scenarios() -> int:
     config = LoopConfig.coding_agent()
     print("=" * 80)
-    print("Agentboxx Loop Detector Sensitivity & Calibration Benchmark")
+    print("Agentboxx Loop Detector Synthetic Scenario Test")
     print(f"Profile: LoopConfig.coding_agent() (window={config.window}, exact_warn={config.exact_warn}, error_warn={config.error_warn})")
     print("=" * 80)
 
     results = []
-    false_positives = 0
-    false_negatives = 0
-    true_positives = 0
-    true_negatives = 0
+    benign_unexpected = 0
+    stuck_missed = 0
+    stuck_flagged = 0
+    benign_clean = 0
 
     for traj in ALL_TRAJECTORIES:
         res = evaluate_trajectory(traj, config)
@@ -159,41 +160,36 @@ def run_benchmark() -> int:
 
         if traj["category"] == "benign":
             if res["is_flagged"]:
-                false_positives += 1
+                benign_unexpected += 1
             else:
-                true_negatives += 1
+                benign_clean += 1
         elif traj["category"] == "stuck":
             if res["is_flagged"]:
-                true_positives += 1
+                stuck_flagged += 1
             else:
-                false_negatives += 1
+                stuck_missed += 1
 
         status = "[PASS]" if res["passed"] else "[FAIL]"
         detection_info = f"step {res['first_detected_step']} ({', '.join(res['kinds'])})" if res["is_flagged"] else "no signals"
         print(f"{status:<7} {res['name']}")
         print(f"        Expected: {'LOOP' if res['expected_loop'] else 'CLEAN'} | Result: {'FLAGGED' if res['is_flagged'] else 'CLEAN'} | {detection_info}")
 
-    total_benign = true_negatives + false_positives
-    total_stuck = true_positives + false_negatives
-
-    fpr = (false_positives / total_benign) * 100 if total_benign else 0.0
-    recall = (true_positives / total_stuck) * 100 if total_stuck else 100.0
-    precision = (true_positives / (true_positives + false_positives)) * 100 if (true_positives + false_positives) else 100.0
+    total_benign = benign_clean + benign_unexpected
+    total_stuck = stuck_flagged + stuck_missed
+    passed_count = sum(1 for r in results if r["passed"])
 
     print("-" * 80)
-    print("Benchmark Calibration Summary:")
-    print(f"  False Positive Rate (FPR): {fpr:.1f}% (Acceptance criterion: 0.0%)")
-    print(f"  Recall (Loops Caught):      {recall:.1f}% (Acceptance criterion: 100.0%)")
-    print(f"  Precision:                  {precision:.1f}%")
+    print("Scenario Summary (5 hand-written cases; regression check, not rate data):")
+    print(f"  Passed: {passed_count}/{len(results)} (normal clean: {benign_clean}/{total_benign}, stuck flagged: {stuck_flagged}/{total_stuck})")
     print("=" * 80)
 
-    if false_positives == 0 and recall == 100.0:
-        print("ALL ACCEPTANCE CRITERIA MET: Detector is properly calibrated for real coding agents.")
+    if benign_unexpected == 0 and stuck_missed == 0:
+        print("ALL SCENARIOS BEHAVED AS EXPECTED (synthetic regression check passed).")
         return 0
     else:
-        print("CALIBRATION FAILURE: Detector sensitivity requires tuning.")
+        print("SCENARIO CHECK FAILED: one or more scenarios did not match expectations.")
         return 1
 
 
 if __name__ == "__main__":
-    sys.exit(run_benchmark())
+    sys.exit(run_scenarios())

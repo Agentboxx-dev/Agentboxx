@@ -19,3 +19,5 @@
 - [ ] Every new stop or failure path is written to the signed log
 - [ ] Docs updated if behavior changed
 - [ ] The description matches the diff
+- [ ] Every performance or accuracy claim is backed by data and a reproducible command in this repo
+- [ ] I opened the data or files behind any claim I made

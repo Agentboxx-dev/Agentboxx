@@ -39,8 +39,8 @@
 <rect x="270" y="340" width="440" height="90" rx="10" fill="#161b22" stroke="#d29922" stroke-width="2"/>
 <text x="284" y="364" fill="#e6edf3" font-size="14" font-weight="600">4  Analysis: detectors → signals → hints</text>
 <text x="284" y="382" fill="#8b949e" font-size="11">✓ repeat · error · no-progress · cycle · semantic loop</text>
-<text x="284" y="398" fill="#8b949e" font-size="11">✓ goal drift detector · SWE-bench/GAIA calibrated benchmarks</text>
-<text x="284" y="414" fill="#8b949e" font-size="11">✓ 0% FPR · 100% recall · LoopConfig profiles</text>
+<text x="284" y="398" fill="#8b949e" font-size="11">✓ goal drift detector · LoopConfig preset profiles</text>
+<text x="284" y="414" fill="#8b949e" font-size="11">✓ synthetic scenario tests (examples/benchmark_detector.py)</text>
 <rect x="270" y="444" width="440" height="74" rx="10" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
 <text x="284" y="468" fill="#e6edf3" font-size="14" font-weight="600">5  Evidence Layer</text>
 <text x="284" y="486" fill="#8b949e" font-size="11">✓ SHA-256 hash chain · HMAC signing · Ed25519 run receipts</text>
@@ -90,6 +90,6 @@
 <text x="600" y="624" fill="#3fb950" font-size="11" font-weight="600">CLI &amp; UI</text>
 <text x="600" y="640" fill="#8b949e" font-size="10.5">cli.py · report.py · replay.py · replay_ui.py · bundle.py · agent.py</text>
 <text x="600" y="660" fill="#8b949e" font-size="11" font-weight="600">Total</text>
-<text x="600" y="676" fill="#e6edf3" font-size="10.5">26 modules · 533+ tests · 0% FPR benchmarks · Ed25519 + HMAC + SHA-256 cryptographic chain</text>
+<text x="600" y="676" fill="#e6edf3" font-size="10.5">26 modules · 533+ tests · synthetic scenario tests · Ed25519 + HMAC + SHA-256 cryptographic chain</text>
 <text x="20" y="712" fill="#6e7681" font-size="10.5">✓ built and tested · ○ planned · Green: trusted host · Red: untrusted sandbox · Gold: hint feedback loop · Purple: recording pipeline</text>
 </svg>
