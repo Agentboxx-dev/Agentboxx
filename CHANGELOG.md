@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-26
+
+### Fixed
+- **Custom Secret Redaction in `Recorder.run()`**: Apply `redact_patterns` consistently across live `command`, `stdout`, and `stderr` outputs for both local and sandbox backends (`_redact_observation()`), recomputing `sha256`, `command_fingerprint`, and `error_signature` on redacted content and syncing `obs["redactions"]`.
+
 ## [0.4.0] - 2026-11-26
 
 ### Added
