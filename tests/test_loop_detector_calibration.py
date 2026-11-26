@@ -1,4 +1,4 @@
-"""Tests for SWE-bench calibrated LoopConfig profiles and benchmark harness (Issue #65)."""
+"""Tests for LoopConfig preset profiles and synthetic scenario script (Issue #65)."""
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ BENCHMARK_SCRIPT = Path(__file__).resolve().parents[1] / "examples" / "benchmark
 
 
 def test_loop_config_profiles():
-    """Verify preconfigured LoopConfig profiles have calibrated thresholds."""
+    """Verify preconfigured LoopConfig preset profiles have expected field values."""
     coding = LoopConfig.coding_agent()
     assert coding.window == 15
     assert coding.exact_warn == 4
@@ -34,8 +34,8 @@ def test_loop_config_profiles():
     assert default.exact_warn == 3
 
 
-def test_swe_bench_tdd_trajectory_zero_false_positives():
-    """Verify coding_agent profile produces zero false positives during test/edit cycles."""
+def test_tdd_scenario_raises_no_signals():
+    """Verify coding_agent profile raises zero signals on synthetic test/edit steps."""
     detector = LoopDetector(cfg=LoopConfig.coding_agent())
     tdd_steps = [
         {"command_fingerprint": "fp:git_status", "workspace_hash": "ws_0", "exit_code": 0, "error_signature": ""},
@@ -51,7 +51,7 @@ def test_swe_bench_tdd_trajectory_zero_false_positives():
         if sigs:
             signals.extend(sigs)
 
-    assert len(signals) == 0, f"Expected 0 false positives during TDD, got: {signals}"
+    assert len(signals) == 0, f"Expected 0 signals during TDD, got: {signals}"
 
 
 def test_cyclic_loop_detected_within_four_iterations():
@@ -73,10 +73,9 @@ def test_cyclic_loop_detected_within_four_iterations():
     assert any(s["kind"] == "loop.cycle" for s in signals)
 
 
-def test_run_benchmark_harness_script_passes():
-    """Verify python examples/benchmark_detector.py executes and passes all criteria."""
+def test_scenario_script_passes():
+    """Verify python examples/benchmark_detector.py executes and passes all 5 scenarios."""
     res = subprocess.run([sys.executable, str(BENCHMARK_SCRIPT)], capture_output=True, text=True)
     assert res.returncode == 0
-    assert "ALL ACCEPTANCE CRITERIA MET" in res.stdout
-    assert "False Positive Rate (FPR): 0.0%" in res.stdout
-    assert "Recall (Loops Caught):      100.0%" in res.stdout
+    assert "ALL SCENARIOS BEHAVED AS EXPECTED" in res.stdout
+    assert "Passed: 5/5 (normal clean: 2/2, stuck flagged: 3/3)" in res.stdout
