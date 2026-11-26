@@ -1,15 +1,3 @@
-## Unreleased
-
-- **Calibrated Loop Detection & SWE-bench Benchmarks** (`loop_detector.py`, Issue #65):
-  Pre-configured threshold profiles (`LoopConfig.coding_agent()`, `LoopConfig.conservative()`, `LoopConfig.aggressive()`).
-  Calibrated against SWE-bench trajectories: zero false positives during test-driven development (TDD) while catching 100% of cyclic loops within 4 steps.
-  Added standalone benchmark harness in `examples/benchmark_detector.py`.
-
-- **Human-in-the-loop (HITL) approvals** (`approval.py`, Issue #96):
-  Interactive terminal prompt (`InteractiveApprover`) and programmatic callback (`CallbackApprover`) for actions requiring confirmation.
-  Signed audit logging with `approval.requested` and `approval.decision` records.
-  Configurable non-interactive fallback (`on_unattended="deny" | "fail"`) to prevent CI/CD pipelines from hanging indefinitely.
-
 # Changelog
 
 All notable changes to this project are documented in this file.
@@ -19,10 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-26
+
 ### Added
-- Semantic drift and circular reasoning detector (`SemanticDriftDetector`) with pluggable embedder and stdlib fallback ([#30](https://github.com/Agentboxx-dev/Agentboxx/issues/30))
-- `analysis.signal` events for `semantic_loop` and `goal_drift`
-- Optional `embeddings` extra (`fastembed>=0.2.0`) in `pyproject.toml`
+- **gVisor Zero-Trust & MicroVM Sandboxing** (`gvisor_backend.py`, [#103](https://github.com/Agentboxx-dev/Agentboxx/issues/103)):
+  - Added `GVisorSandbox` (`runsc` user-space kernel isolation), `MicroVMSandbox`, `gvisor_available()`, and `GVisorNotAvailable`.
+  - Configurable `require_gvisor=True` strict mode and `fallback_to_docker=True` dev fallback with warnings.
+  - Cryptographic isolation attestation recorded in signed `session.start` events, plus `docs/sandboxing.md`.
+- **Pre-execution SecurityPolicy Engine** (`policy.py`, [#95](https://github.com/Agentboxx-dev/Agentboxx/issues/95)): allow/deny/ask command policy evaluation before execution.
+- **Human-in-the-Loop (HITL) Approvals** (`approval.py`, [#96](https://github.com/Agentboxx-dev/Agentboxx/issues/96)):
+  - Interactive terminal (`InteractiveApprover`) and programmatic (`CallbackApprover`) confirmation workflows with signed `approval.requested` / `approval.decision` audit records.
+  - Configurable `on_unattended="deny" | "fail"` fallback for CI/CD runs.
+- **Crash-Safe Session Finalization & Recovery** (`agentbox recover` CLI, [#94](https://github.com/Agentboxx-dev/Agentboxx/issues/94)).
+- **Custom Secret Redaction Patterns & `redact-test` CLI** (`redact.py`, [#93](https://github.com/Agentboxx-dev/Agentboxx/issues/93)).
+- **Calibrated Loop Detection & SWE-bench / GAIA Benchmarks** (`loop_detector.py`, `examples/benchmark_detector.py`, [#65](https://github.com/Agentboxx-dev/Agentboxx/issues/65), [#105](https://github.com/Agentboxx-dev/Agentboxx/pull/105)):
+  - Pre-configured `LoopConfig.coding_agent()`, `conservative()`, and `aggressive()` profiles achieving 0.0% FPR and 100% recall.
+- **Semantic Drift & Circular Reasoning Detector** (`semantic_detector.py`, [#30](https://github.com/Agentboxx-dev/Agentboxx/issues/30)): `semantic_loop` and `goal_drift` signals with optional `embeddings` extra (`fastembed>=0.2.0`).
+- **Root Exports & Updated Architecture**: Exported `DockerSandbox`, `docker_available`, `GVisorSandbox`, and `MicroVMSandbox` in `agentbox` ([#102](https://github.com/Agentboxx-dev/Agentboxx/issues/102)); added benchmark metrics to `README.md` and updated `docs/architecture.svg` ([#109](https://github.com/Agentboxx-dev/Agentboxx/pull/109)).
+
+
 - Comprehensive detection guide in `docs/detection.md` and FAQ in README
 - Pre-execution `SecurityPolicy` for `Recorder.run`: command prefix and regex rules (`ALLOW`/`DENY`/`REQUIRE_APPROVAL`), path blocklist and environment protection; `Recorder(policy=SecurityPolicy.default_strict())` ([#95](https://github.com/Agentboxx-dev/Agentboxx/issues/95))
 - Signed `policy.blocked` and `policy.approved` events; a blocked command is not executed and returns a simulated error observation (exit code 126)

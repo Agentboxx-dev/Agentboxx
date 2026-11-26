@@ -17,7 +17,7 @@
 > **Demo:** `agentbox demo` runs a scripted stuck-agent scenario locally (no Docker, no API key). To re-record the terminal GIF, see [`docs/RECORDING.md`](docs/RECORDING.md).
 
 > [!NOTE]
-> **v0.3.1.** Live on [PyPI](https://pypi.org/project/agentboxx/) (`pip install agentboxx`). Validated end-to-end with sandboxed execution, cryptographic signing, loop detection, and live model execution. Interfaces may evolve before v1.0. Known gaps are listed under [Limitations](#limitations).
+> **v0.4.0.** Live on [PyPI](https://pypi.org/project/agentboxx/) (`pip install agentboxx`). Validated end-to-end with sandboxed execution, cryptographic signing, loop detection, and live model execution. Interfaces may evolve before v1.0. Known gaps are listed under [Limitations](#limitations).
 
 ---
 
