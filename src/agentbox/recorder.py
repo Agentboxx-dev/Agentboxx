@@ -386,6 +386,37 @@ class Recorder:
 
         return {"observation": call, "signals": signals}
 
+    def _redact_observation(self, obs: dict[str, Any]) -> dict[str, int]:
+        """Apply this recorder's redactor (including custom patterns) to an observation dict."""
+        cmd = obs.get("command", "")
+        out_rec = obs.get("stdout") or {}
+        err_rec = obs.get("stderr") or {}
+        out_text = out_rec.get("text", "") if isinstance(out_rec, dict) else str(out_rec)
+        err_text = err_rec.get("text", "") if isinstance(err_rec, dict) else str(err_rec)
+
+        cmd_clean, out_clean, err_clean, extra_counts = self._redactor.redact_all(
+            cmd, out_text, err_text
+        )
+        if not extra_counts:
+            return {}
+
+        if cmd_clean != cmd:
+            obs["command"] = cmd_clean
+            obs["command_fingerprint"] = fingerprint(cmd_clean)
+
+        if isinstance(out_rec, dict) and out_clean != out_text:
+            out_rec["text"] = out_clean
+            out_rec["sha256"] = hashlib.sha256(out_clean.encode()).hexdigest()
+
+        if isinstance(err_rec, dict) and err_clean != err_text:
+            err_rec["text"] = err_clean
+            err_rec["sha256"] = hashlib.sha256(err_clean.encode()).hexdigest()
+            sig, cls = error_signature(err_clean, obs.get("exit_code", 0))
+            obs["error_signature"] = sig
+            obs["error_class"] = cls
+
+        return extra_counts
+
     def _enforce_contract_budgets(self):
         if self.contract and not self.closed:
             if self.contract.check_step_budget(self.step_index):
@@ -434,8 +465,10 @@ class Recorder:
 
         sbx = obs.pop("sandbox", None)
 
+        extra_counts = self._redact_observation(obs)
         thought, t_counts = self._redactor.redact(thought)
-        redactions = merge_counts(obs.get("redactions", {}), t_counts)
+        redactions = merge_counts(obs.get("redactions", {}), extra_counts, t_counts)
+        obs["redactions"] = redactions
 
         step = {
             "session_id": self.session_id,
