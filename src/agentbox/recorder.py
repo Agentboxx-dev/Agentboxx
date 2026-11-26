@@ -4,6 +4,7 @@ import hashlib
 import os
 import signal as _signal
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Callable
 
@@ -69,6 +70,7 @@ class Recorder:
         redact_patterns: list[tuple] | None = None,
         policy: SecurityPolicy | None = None,
         approver: ApprovalHandler | Callable | None = None,
+        require_receipt: bool = False,
     ) -> None:
         """Initialize a new recording session.
 
@@ -91,6 +93,8 @@ class Recorder:
             policy: Optional SecurityPolicy evaluated by run() before a command executes.
                 Blocked commands are never executed. None (default) changes nothing.
             approver: Optional ApprovalHandler or callable for human-in-the-loop approvals.
+            require_receipt: If True, raise RuntimeError when no Ed25519 private key is
+                available instead of closing without a signed run receipt.
         """
         self.session_id, self.workspace, self.sandbox = (
             session_id,
@@ -103,6 +107,12 @@ class Recorder:
         self.approver = approver or (getattr(policy, "approver", None) if isinstance(getattr(policy, "approver", None), ApprovalHandler) else None)
         self.log_path = Path(log_dir) / f"{session_id}.ndjson"
         self.ed25519_key = load_ed25519_private_key(ed25519_key_path)
+        self.require_receipt = bool(require_receipt)
+        if self.require_receipt and self.ed25519_key is None:
+            raise RuntimeError(
+                "agentbox: require_receipt=True, but no Ed25519 private key was found. "
+                "Run 'agentbox keygen' or pass ed25519_key_path."
+            )
 
         self.writer = ChainWriter(
             self.log_path,
