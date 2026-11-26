@@ -453,3 +453,66 @@ def test_close_warns_when_no_ed25519_key(tmp_path, monkeypatch):
     end_event = next(e for e in records if e["event_type"] == "session.end")
     assert end_event["data"]["receipt_created"] is False
     assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
+
+
+
+def test_require_receipt_raises_when_no_ed25519_key(tmp_path, monkeypatch):
+    """Recorder(..., require_receipt=True) fails fast when no Ed25519 key exists."""
+    monkeypatch.setenv("AGENTBOX_ED25519_KEY", str(tmp_path / "missing_ed25519.key"))
+    with pytest.raises(RuntimeError, match="require_receipt=True"):
+        Recorder(
+            "session-require-fail",
+            workspace=str(tmp_path / "ws"),
+            log_dir=str(tmp_path / "runs"),
+            require_receipt=True,
+        )
+    assert not (tmp_path / "runs" / "session-require-fail.ndjson").exists()
+
+
+
+def test_require_receipt_raises_on_close_if_key_missing_and_stops_sandbox(tmp_path, keypair):
+    """If ed25519_key is unavailable at close(), require_receipt=True cleans up and raises."""
+    key_path, _ = keypair
+    stopped = []
+
+    class DummySandbox:
+        def describe(self):
+            return {"backend": "dummy"}
+
+        def run(self, cmd, timeout_s=60):
+            from agentbox.executor import build_observation
+
+            class _Cap:
+                total = 0
+                truncated = False
+
+                def text(self):
+                    return ""
+
+            return build_observation(cmd, 0, _Cap(), _Cap(), False, False, str(tmp_path), 1)
+
+        def stop(self):
+            stopped.append(True)
+
+    rec = Recorder(
+        "session-require-close",
+        workspace=str(tmp_path / "ws"),
+        log_dir=str(tmp_path / "runs"),
+        ed25519_key_path=key_path,
+        sandbox=DummySandbox(),
+        require_receipt=True,
+    )
+    rec.run("echo ok")
+    rec.ed25519_key = None
+
+    with pytest.raises(RuntimeError, match="require_receipt=True"):
+        rec.close("done")
+
+    assert stopped == [True]
+    records = [
+        json.loads(line)["event"]
+        for line in rec.log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    end_event = next(e for e in records if e["event_type"] == "session.end")
+    assert end_event["data"]["receipt_skipped_reason"] == "no_ed25519_key"
